@@ -1,0 +1,52 @@
+{
+  "pipeline": {
+    "name": "Dynamic Mapping Auto Pipeline",
+    "version": "1.0",
+    "description": "Automated pipeline for dynamic product mapping updates"
+  },
+  "triggers": {
+    "file_monitoring": {
+      "enabled": true,
+      "file": "mapping_config.json",
+      "check_interval": 60
+    },
+    "git_hooks": {
+      "enabled": true,
+      "pre_commit": true,
+      "post_commit": false
+    },
+    "webhook": {
+      "enabled": false,
+      "port": 5000,
+      "secret": "your-secret-key"
+    },
+    "scheduler": {
+      "enabled": false,
+      "intervals": [
+        "every hour",
+        "daily at 02:00",
+        "weekly on monday at 09:00"
+      ]
+    }
+  },
+  "notifications": {
+    "email": {
+      "enabled": false,
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "username": "your-email@gmail.com",
+      "password": "your-password",
+      "recipients": ["admin@company.com"]
+    },
+    "slack": {
+      "enabled": false,
+      "webhook_url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "pipeline.log",
+    "max_size": "10MB",
+    "backup_count": 5
+  }
+}

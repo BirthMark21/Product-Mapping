@@ -1,0 +1,201 @@
+{
+  "version": "1.0",
+  "last_updated": "2025-01-27",
+  "description": "Dynamic product standardization mappings for all 6 tables",
+  "tables": {
+    "farm_prices": {
+      "description": "Farm prices product mappings",
+      "parent_products": {
+        "Apple": {
+          "parent_id": "33a3f638-20dc-5797-a9e2-660ae1bad782",
+          "children": [
+            "Apple B",
+            "Apple Mango", 
+            "Apple Grade A",
+            "Apple Grade B"
+          ]
+        },
+        "Orange": {
+          "parent_id": "45b2c789-31ed-6808-b0f3-771bf31c2699",
+          "children": [
+            "Orange Valencia",
+            "Orange Yerer",
+            "Valencia Orange"
+          ]
+        },
+        "Red Onion A": {
+          "parent_id": "67c3d890-42fe-7919-c1f4-882cf42d3700",
+          "children": [
+            "Red Onion B",
+            "Red Onion C", 
+            "Red Onion Elfora",
+            "Red Onion Grade A",
+            "Red Onion Grade B",
+            "Red Onion Grade C",
+            "Red Onion Grade A Restaurant quality",
+            "Red onion ( ሃበሻ )"
+          ]
+        },
+        "Tomato": {
+          "parent_id": "89d4e901-53gf-8020-d2g5-993dg53e4811",
+          "children": [
+            "Tomato A",
+            "Tomato B",
+            "Tomatoes Grade A",
+            "Tomatoes Grade B"
+          ]
+        },
+        "Potato": {
+          "parent_id": "01e5f012-64hg-9131-e3h6-004eh64f5922",
+          "children": [
+            "Potatoes",
+            "Potatoes Chips",
+            "Potatoes Restaurant Quality",
+            "Potato for chips",
+            "Potato Chips"
+          ]
+        },
+        "Avocado": {
+          "parent_id": "23f6g123-75ih-0242-f4i7-115fi75g6033",
+          "children": [
+            "Avocado B",
+            "Avocado Shekaraw"
+          ]
+        },
+        "Mango": {
+          "parent_id": "45g7h234-86ji-1353-g5j8-226gj86h7144",
+          "children": [
+            "Apple Mango",
+            "Mango Apple",
+            "Ye Habesha Mango"
+          ]
+        },
+        "White Cabbage": {
+          "parent_id": "67h8i345-97kj-2464-h6k9-337hk97i8255",
+          "children": [
+            "White Cabbage B",
+            "White Cabbage (Large)",
+            "White Cabbage (Small)"
+          ]
+        },
+        "Sweet Potato": {
+          "parent_id": "89i9j456-08lk-3575-i7l0-448il08j9366",
+          "children": [
+            "Sweet Potatoes"
+          ]
+        },
+        "Chili Green": {
+          "parent_id": "01j0k567-19ml-4686-j8m1-559jm19k0477",
+          "children": [
+            "Chilly Green",
+            "Chilly Green (Elfora)",
+            "Chilly Green (Starta)",
+            "Green chili starta"
+          ]
+        },
+        "Carrot": {
+          "parent_id": "12k1l678-20nm-5797-f5j2-660km20l1588",
+          "children": [
+            "Carrot A",
+            "Carrot B"
+          ]
+        }
+      }
+    },
+    "supermarket_prices": {
+      "description": "Supermarket prices product mappings",
+      "parent_products": {
+        "Apple": {
+          "parent_id": "33a3f638-20dc-5797-a9e2-660ae1bad782",
+          "children": [
+            "Apple B",
+            "Apple Mango"
+          ]
+        },
+        "Orange": {
+          "parent_id": "45b2c789-31ed-6808-b0f3-771bf31c2699",
+          "children": [
+            "Orange Valencia",
+            "Valencia Orange"
+          ]
+        }
+      }
+    },
+    "distribution_center_prices": {
+      "description": "Distribution center prices product mappings",
+      "parent_products": {
+        "Apple": {
+          "parent_id": "33a3f638-20dc-5797-a9e2-660ae1bad782",
+          "children": [
+            "Apple B",
+            "Apple Mango"
+          ]
+        },
+        "Orange": {
+          "parent_id": "45b2c789-31ed-6808-b0f3-771bf31c2699",
+          "children": [
+            "Orange Valencia",
+            "Valencia Orange"
+          ]
+        }
+      }
+    },
+    "local_shop_prices": {
+      "description": "Local shop prices product mappings",
+      "parent_products": {
+        "Apple": {
+          "parent_id": "33a3f638-20dc-5797-a9e2-660ae1bad782",
+          "children": [
+            "Apple B",
+            "Apple Mango"
+          ]
+        },
+        "Orange": {
+          "parent_id": "45b2c789-31ed-6808-b0f3-771bf31c2699",
+          "children": [
+            "Orange Valencia",
+            "Valencia Orange"
+          ]
+        }
+      }
+    },
+    "ecommerce_prices": {
+      "description": "Ecommerce prices product mappings",
+      "parent_products": {
+        "Apple": {
+          "parent_id": "33a3f638-20dc-5797-a9e2-660ae1bad782",
+          "children": [
+            "Apple B",
+            "Apple Mango"
+          ]
+        },
+        "Orange": {
+          "parent_id": "45b2c789-31ed-6808-b0f3-771bf31c2699",
+          "children": [
+            "Orange Valencia",
+            "Valencia Orange"
+          ]
+        }
+      }
+    },
+    "sunday_market_prices": {
+      "description": "Sunday market prices product mappings",
+      "parent_products": {
+        "Apple": {
+          "parent_id": "33a3f638-20dc-5797-a9e2-660ae1bad782",
+          "children": [
+            "Apple B",
+            "Apple Mango"
+          ]
+        },
+        "Orange": {
+          "parent_id": "45b2c789-31ed-6808-b0f3-771bf31c2699",
+          "children": [
+            "Orange Valencia",
+            "Valencia Orange"
+          ]
+        }
+      }
+    }
+  }
+}
