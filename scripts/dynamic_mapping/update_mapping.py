@@ -42,22 +42,22 @@ def update_master_table(table_name, parent_products):
         
         with engine.connect() as conn:
             # Clear existing data
-            delete_query = f"DELETE FROM public.{table_name}_master"
+            delete_query = f"DELETE FROM public.canonical_products_master"
             conn.execute(delete_query)
-            print(f"  Cleared existing data from {table_name}_master")
+            print(f"  Cleared existing data from canonical_products_master")
             
             # Prepare data for insertion
             master_data = []
             
             for parent_name, parent_info in parent_products.items():
                 parent_id = parent_info['parent_id']
-                children = parent_info.get('children', [])
+                # source = parent_info.get('source', 'dynamic_mapping') 
                 
                 # Create parent record
                 parent_record = {
                     'parent_product_id': parent_id,
-                    'parent_product_name': parent_name,
-                    'child_product_names': str(children) if children else None,
+                    'parent_name': parent_name,
+                    'source': 'dynamic_mapping', # Default source for manual mappings
                     'created_at': pd.Timestamp.now(),
                     'updated_at': pd.Timestamp.now()
                 }
@@ -66,8 +66,8 @@ def update_master_table(table_name, parent_products):
             # Insert new data
             if master_data:
                 master_df = pd.DataFrame(master_data)
-                master_df.to_sql(f'{table_name}_master', conn, if_exists='append', index=False, method='multi')
-                print(f"  SUCCESS: Inserted {len(master_data)} parent products into {table_name}_master")
+                master_df.to_sql('canonical_products_master', conn, if_exists='append', index=False, method='multi')
+                print(f"  SUCCESS: Inserted {len(master_data)} parent products into canonical_products_master")
             else:
                 print(f"  WARNING: No parent products found for {table_name}")
                 

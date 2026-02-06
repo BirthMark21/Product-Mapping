@@ -49,12 +49,13 @@ REMOTE_DB_NAME = os.getenv("REMOTE_DB_NAME")
 # Source Tables
 SUPABASE_SCHEMA = 'public'
 SUPABASE_TABLES = [
-    "farm_prices",
-    "supermarket_prices",
-    "distribution_center_prices",
-    "local_shop_prices",
-    "ecommerce_prices",
-    "sunday_market_prices"
+    # "farm_prices",
+    # "supermarket_prices",
+    # "distribution_center_prices",
+    # "local_shop_prices",
+    # "ecommerce_prices",
+    # "sunday_market_prices",
+    "products"
 ]
 CLICKHOUSE_TABLE_NAME = 'product_names'
 
