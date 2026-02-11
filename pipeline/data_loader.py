@@ -3,83 +3,44 @@
 import pandas as pd
 from sqlalchemy import text
 import clickhouse_connect
+import os
 import config.setting as settings
 
-def load_all_product_data_from_clickhouse(engine) -> pd.DataFrame:
+def load_product_data_from_staging(engine) -> pd.DataFrame:
     """
-    Fetches product names and IDs from the ClickHouse database.
-    The table name is read from the settings file.
+    Fetches product data from Staging PostgreSQL (replacing ClickHouse/Superset).
+    Queries both 'products' and 'product_names' tables.
     """
-    table_name = settings.CLICKHOUSE_TABLE_NAME
-    print(f"--- Loading data from ClickHouse table: {table_name} ---")
-
+    print(f"--- Loading data from Staging PostgreSQL ---")
+    
     try:
-        import requests
-        import json
+        # Query 1: Fetch from 'products' table
+        query_products = """
+            SELECT id::text AS raw_product_id, name AS raw_product_name, created_at, 'products' as source_table
+            FROM products
+        """
         
-        # Superset API configuration
-        superset_url = "http://64.227.129.135:8088"
-        access_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6dHJ1ZSwiaWF0IjoxNzU5MTM5MzAwLCJqdGkiOiIzMGZkYTJmNS1lMmIxLTQ2ZWYtYjQwNy01YTJiNWE1MjRlZTgiLCJ0eXBlIjoiYWNjZXNzIiwic3ViIjoyNCwibmJmIjoxNzU5MTM5MzAwLCJjc3JmIjoiNDMzMmE5NzMtYTkxMi00MzJlLTkyZjctYTJkOTIyMzljODRjIiwiZXhwIjo0OTEyNzM5MzAwfQ.cQA_bjBCdZGzbnmlo3nl96vxrrIPO0sv-47x6TrDUnY"
+        # Query 2: Fetch from 'product_names' table
+        query_names = """
+            SELECT id::text AS raw_product_id, name AS raw_product_name, created_at, 'product_names' as source_table
+            FROM product_names
+        """
         
-        # SQL query to get product data
-        sql_query = f'SELECT id AS raw_product_id, name AS raw_product_name, toString(created_at) AS created_at FROM "chipchip"."{table_name}"'
+        # Combine queries with UNION ALL for efficiency
+        full_query = f"{query_products} UNION ALL {query_names}"
         
-        # Prepare the request payload with unique client_id (shorter for database constraint)
-        import uuid
-        unique_client_id = f"p_{uuid.uuid4().hex[:6]}"
-        
-        payload = {
-            "client_id": unique_client_id,
-            "database_id": 1,
-            "json": True,
-            "runAsync": False,
-            "schema": "chipchip",
-            "sql": sql_query,
-            "tab": "",
-            "expand_data": True
-        }
-        
-        # Headers for the API request
-        headers = {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {access_token}',
-            'User-Agent': 'chipchip/bot'
-        }
-        
-        # Make the API request
-        response = requests.post(
-            f"{superset_url}/api/v1/sqllab/execute/",
-            headers=headers,
-            json=payload,
-            verify=False  # --insecure equivalent
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
+        with engine.connect() as conn:
+            df = pd.read_sql(text(full_query), conn)
             
-            # Extract data from the response
-            if 'data' in result and result['data']:
-                df = pd.DataFrame(result['data'], columns=['raw_product_id', 'raw_product_name', 'created_at'])
-                
-                if not df.empty:
-                    # Ensure the ID column is treated as a string to match Supabase UUIDs.
-                    df['raw_product_id'] = df['raw_product_id'].astype(str)
-                    print(f"SUCCESS: Successfully loaded a total of {len(df)} product records from ClickHouse via Superset API.")
-                    return df
-                else:
-                    print("SUCCESS: ClickHouse query executed successfully but returned no data.")
-                    return pd.DataFrame(columns=['raw_product_id', 'raw_product_name', 'created_at'])
+            if not df.empty:
+                print(f"SUCCESS: Loaded {len(df)} records from Staging DB (products + product_names).")
+                return df
             else:
-                print("SUCCESS: ClickHouse query executed successfully but returned no data.")
+                print("SUCCESS: Staging DB query returned no data.")
                 return pd.DataFrame(columns=['raw_product_id', 'raw_product_name', 'created_at'])
-        else:
-            print(f"ERROR: Superset API request failed with status {response.status_code}: {response.text}")
-            return pd.DataFrame(columns=['raw_product_id', 'raw_product_name', 'created_at'])
-            
+
     except Exception as e:
-        print(f"ERROR: Failed to load data from ClickHouse via Superset API. Error: {e}")
-        # Return an empty DataFrame on failure to allow the pipeline to continue.
+        print(f"ERROR: Failed to load data from Staging DB. Error: {e}")
         return pd.DataFrame(columns=['raw_product_id', 'raw_product_name', 'created_at'])
 
 

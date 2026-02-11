@@ -8,6 +8,8 @@ import pandas as pd
 import os
 import re
 import sys
+import traceback
+import importlib.util
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
@@ -66,7 +68,6 @@ def fetch_supabase_products():
             
     except Exception as e:
         print(f"❌ Error fetching Supabase products: {e}")
-        import traceback
         traceback.print_exc()
         return pd.DataFrame()
 
@@ -115,7 +116,6 @@ def group_similar_products(products_df):
 
 def load_existing_mapping():
     """Load existing PARENT_CHILD_MAPPING from standardization.py"""
-    import importlib.util
     standardization_path = os.path.join('Mapping', 'pipeline', 'standardization.py')
     
     spec = importlib.util.spec_from_file_location("standardization", standardization_path)

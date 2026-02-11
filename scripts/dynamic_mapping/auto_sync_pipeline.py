@@ -8,6 +8,7 @@ import sys
 import os
 import time
 import subprocess
+import argparse
 from pathlib import Path
 from datetime import datetime
 
@@ -180,7 +181,6 @@ class AutoSyncPipeline:
 
 def main():
     """Main entry point"""
-    import argparse
     
     parser = argparse.ArgumentParser(description='Auto-Sync Pipeline')
     parser.add_argument('--monitor', action='store_true', 

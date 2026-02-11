@@ -7,10 +7,13 @@ Manages product mappings dynamically without code changes
 import json
 import os
 import sys
+import hashlib
+import shutil
+import argparse
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List
-import hashlib
+from pipeline.standardization import PARENT_CHILD_MAPPING, _generate_stable_uuid
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -44,7 +47,6 @@ class DynamicMappingManager:
     
     def _create_default_mappings(self) -> Dict:
         """Create default mapping structure"""
-        from pipeline.standardization import PARENT_CHILD_MAPPING, _generate_stable_uuid
         
         mappings = {
             "version": "1.0",
@@ -93,7 +95,6 @@ class DynamicMappingManager:
         backup_file = self.backup_dir / f"mapping_config_{timestamp}.json"
         
         try:
-            import shutil
             shutil.copy2(self.mapping_file, backup_file)
             print(f"📦 Created backup: {backup_file}")
         except Exception as e:
@@ -101,7 +102,6 @@ class DynamicMappingManager:
     
     def add_parent_product(self, parent_name: str, children: List[str]):
         """Add a new parent product mapping"""
-        from pipeline.standardization import _generate_stable_uuid
         
         if parent_name in self.mappings['parent_products']:
             print(f"⚠️  Parent product '{parent_name}' already exists")
@@ -164,7 +164,6 @@ class DynamicMappingManager:
         self.mappings['parent_products'][new_name] = self.mappings['parent_products'][old_name]
         
         # Update parent_id for new name
-        from pipeline.standardization import _generate_stable_uuid
         self.mappings['parent_products'][new_name]['parent_id'] = _generate_stable_uuid(new_name)
         
         # Remove old name
@@ -285,7 +284,6 @@ PARENT_CHILD_MAPPING = {{
 
 def main():
     """Interactive CLI for managing mappings"""
-    import argparse
     
     parser = argparse.ArgumentParser(description='Dynamic Mapping Manager')
     parser.add_argument('--add-parent', nargs='+', help='Add parent product: --add-parent "Parent Name" "Child1" "Child2"')

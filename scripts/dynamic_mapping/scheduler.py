@@ -9,6 +9,7 @@ import os
 import time
 import schedule
 import subprocess
+import argparse
 from datetime import datetime
 
 # Add parent directory to path for imports
@@ -90,8 +91,6 @@ def run_scheduler():
 
 def main():
     """Main function"""
-    
-    import argparse
     
     parser = argparse.ArgumentParser(description='Dynamic Mapping Scheduler')
     parser.add_argument('--setup', action='store_true',

@@ -6,8 +6,9 @@ Validates environment and prepares the system for production use
 
 import os
 import sys
-from pathlib import Path
 import subprocess
+from pathlib import Path
+from utils.db_connector import get_db_engine
 
 def print_header(text):
     """Print formatted header"""
@@ -122,8 +123,6 @@ def test_database_connections():
     print_header("🔌 TESTING DATABASE CONNECTIONS")
     
     try:
-        from utils.db_connector import get_db_engine
-        
         databases = {
             'supabase': 'Supabase PostgreSQL',
             'prod_postgres': 'Production PostgreSQL (chipchip)',

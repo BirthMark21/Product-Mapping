@@ -6,13 +6,14 @@ Validates the entire production system status
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-from utils.db_connector import get_db_engine
-from sqlalchemy import text
-from pathlib import Path
 import json
+from pathlib import Path
 from datetime import datetime
+from sqlalchemy import text
+from dotenv import load_dotenv
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from utils.db_connector import get_db_engine
 
 class HealthChecker:
     """System health checker"""
@@ -36,14 +37,12 @@ class HealthChecker:
         
         print("✅ .env file exists")
         
-        # Check for required variables
         required_vars = [
             'SUPABASE_PG_HOST', 'SUPABASE_PG_PASSWORD',
             'PROD_PG_HOST', 'PROD_PG_PASSWORD',
             'HUB_PG_HOST', 'HUB_PG_PASSWORD'
         ]
         
-        from dotenv import load_dotenv
         load_dotenv()
         
         missing = []

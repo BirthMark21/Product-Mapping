@@ -8,14 +8,21 @@ import pandas as pd
 import os
 import re
 import sys
+import traceback
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
-# Add parent directory to path
+# Add parent directories to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'pipeline'))
 
 from utils.db_connector import get_db_engine
 import config.setting as settings
+try:
+    from standardization import PARENT_CHILD_MAPPING
+except ImportError:
+    # Fallback if standardization.py is not in the path yet
+    PARENT_CHILD_MAPPING = {}
 
 # Load environment variables
 load_dotenv()
@@ -67,7 +74,6 @@ def fetch_supabase_products():
             
     except Exception as e:
         print(f"❌ Error fetching Supabase products: {e}")
-        import traceback
         traceback.print_exc()
         return pd.DataFrame()
 
@@ -230,15 +236,6 @@ def update_standardization_mapping(new_mappings):
     
     # Extract existing mapping
     existing_mapping_str = content[mapping_start:mapping_end].strip()
-    
-    # Parse and merge with new mappings
-    # For now, let's create a new mapping section
-    new_mapping_lines = []
-    
-    # Import existing mapping from the file
-    import sys
-    sys.path.insert(0, 'Mapping/pipeline')
-    from standardization import PARENT_CHILD_MAPPING
     
     # Merge new mappings with existing
     updated_mapping = PARENT_CHILD_MAPPING.copy()

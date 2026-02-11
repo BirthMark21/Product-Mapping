@@ -5,6 +5,7 @@ Simple script to check if distribution_center_prices table exists in local datab
 
 import sys
 import os
+import traceback
 sys.path.append('.')
 
 import config.setting as settings
@@ -72,7 +73,6 @@ def check_local_table():
                     
     except Exception as e:
         print(f"❌ Error checking local database: {e}")
-        import traceback
         traceback.print_exc()
 
 if __name__ == "__main__":

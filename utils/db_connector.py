@@ -22,7 +22,8 @@ def get_db_engine(db_type: str):
     DB_CONFIGS = {
         'supabase':   {'prefix': 'PG',         'log_name': 'SOURCE (Supabase/PostgreSQL)'},
         'clickhouse': {'prefix': 'CLICKHOUSE', 'log_name': 'SOURCE (ClickHouse)'},
-        'hub':        {'prefix': 'HUB_PG',     'log_name': 'DESTINATION (PostgreSQL Hub)'}
+        'hub':        {'prefix': 'HUB_PG',     'log_name': 'DESTINATION (PostgreSQL Hub)'},
+        'staging':    {'prefix': 'STAGING_PG', 'log_name': 'SOURCE (Staging PostgreSQL)'}
     }
 
     if db_type not in DB_CONFIGS:
@@ -36,8 +37,8 @@ def get_db_engine(db_type: str):
 
     try:
         engine = None
-        # --- Logic for PostgreSQL connections (Supabase and Hub) ---
-        if db_type in ('supabase', 'hub'):
+        # --- Logic for PostgreSQL connections (Supabase, Hub, and Staging) ---
+        if db_type in ('supabase', 'hub', 'staging'):
             host = os.getenv(f"{prefix}_HOST")
             port = os.getenv(f"{prefix}_PORT")
             db_name = os.getenv(f"{prefix}_DB_NAME")

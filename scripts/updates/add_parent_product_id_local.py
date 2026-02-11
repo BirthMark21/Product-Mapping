@@ -8,6 +8,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 import os
+import ast
 
 # Load environment variables
 load_dotenv()
@@ -59,10 +60,8 @@ def create_parent_mapping_from_canonical(canonical_df):
         child_ids = row['child_product_ids']
         child_names = row['child_product_names']
         
-        # Parse child_ids if it's a string representation of a list
         if isinstance(child_ids, str):
             try:
-                import ast
                 child_ids = ast.literal_eval(child_ids)
             except:
                 child_ids = []
@@ -72,7 +71,6 @@ def create_parent_mapping_from_canonical(canonical_df):
         # Parse child_names if it's a string representation of a list
         if isinstance(child_names, str):
             try:
-                import ast
                 child_names = ast.literal_eval(child_names)
             except:
                 child_names = []

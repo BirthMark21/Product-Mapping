@@ -8,6 +8,7 @@ import pandas as pd
 import requests
 import uuid
 import os
+import traceback
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -91,7 +92,6 @@ def fetch_active_products():
 
     except Exception as e:
         print(f"An exception occurred: {e}")
-        import traceback
         traceback.print_exc()
         return pd.DataFrame()
 

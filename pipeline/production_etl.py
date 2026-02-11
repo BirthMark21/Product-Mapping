@@ -2,10 +2,20 @@
 """
 Production-Grade Multi-Source ETL Pipeline with Dynamic Mapping
 Extracts from Supabase + Production PostgreSQL, standardizes, and loads to all databases
+
+ENHANCEMENTS:
+- Data validation to prevent bad data
+- Fuzzy matching to reduce manual mapping work
+- Retry logic for transient failures
+- Distributed transactions for data consistency
+- Enhanced logging and monitoring
 """
 
 import sys
 import os
+import io
+import traceback
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
@@ -14,16 +24,27 @@ import uuid
 from sqlalchemy import text
 from datetime import datetime
 from utils.db_connector import get_db_engine
+from utils.resilient_db import ResilientDBConnector
+from utils.data_validator import ProductDataValidator
+from utils.fuzzy_matcher import FuzzyProductMatcher
+from utils.transaction_manager import DistributedTransactionManager
 from pipeline.standardization import PARENT_CHILD_MAPPING, CHILD_TO_PARENT_MAP, _generate_stable_uuid
 import logging
 
 # Configure logging
+os.makedirs('logs', exist_ok=True)
+
+# Ensure stdout/stderr are utf-8 encoded for Windows
+if sys.platform.startswith('win'):
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('logs/etl_pipeline.log'),
-        logging.StreamHandler()
+        logging.FileHandler('logs/etl_pipeline.log', encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
@@ -32,172 +53,265 @@ logger = logging.getLogger(__name__)
 class ProductionETLPipeline:
     """Production-grade ETL pipeline for product standardization"""
     
-    def __init__(self):
+    def __init__(self, enable_fuzzy_matching: bool = True, fuzzy_dry_run: bool = True):
+        """
+        Initialize pipeline
+        
+        Args:
+            enable_fuzzy_matching: Enable fuzzy matching for unmapped products
+            fuzzy_dry_run: If True, fuzzy matching logs matches but doesn't use them
+        """
         self.supabase_engine = None
-        self.prod_pg_engine = None
+        self.staging_engine = None
         self.hub_engine = None
+        
+        # Initialize validators and matchers
+        self.data_validator = ProductDataValidator()
+        self.fuzzy_matcher = None
+        self.enable_fuzzy_matching = enable_fuzzy_matching
+        self.fuzzy_dry_run = fuzzy_dry_run
+        
+        if self.enable_fuzzy_matching:
+            self.fuzzy_matcher = FuzzyProductMatcher(
+                PARENT_CHILD_MAPPING,
+                CHILD_TO_PARENT_MAP,
+                threshold=85,
+                dry_run=fuzzy_dry_run
+            )
+        
         self.stats = {
             'start_time': datetime.now(),
             'supabase_products': 0,
-            'prod_pg_products': 0,
-            'prod_pg_product_names': 0,
+            'staging_products': 0,
+            'staging_product_names': 0,
             'total_products': 0,
             'parent_products': 0,
             'mapped_products': 0,
-            'unmapped_products': 0
+            'unmapped_products': 0,
+            'validation_removed': 0,
+            'fuzzy_matched': 0
         }
     
+    
     def connect_to_databases(self):
-        """Establish connections to all databases"""
+        """Establish connections to all databases with retry logic"""
         logger.info("=" * 80)
-        logger.info("🔌 CONNECTING TO DATABASES")
+        logger.info("🔌 CONNECTING TO DATABASES (with retry logic)")
         logger.info("=" * 80)
         
         try:
-            self.supabase_engine = get_db_engine('supabase')
-            logger.info("✅ Connected to Supabase PostgreSQL")
+            self.supabase_engine = ResilientDBConnector.get_engine_with_retry('supabase')
         except Exception as e:
-            logger.error(f"❌ Failed to connect to Supabase: {e}")
+            logger.error(f"❌ Failed to connect to Supabase after retries: {e}")
             raise
         
         try:
-            self.prod_pg_engine = get_db_engine('prod_postgres')
-            logger.info("✅ Connected to Production PostgreSQL (chipchip)")
+            self.staging_engine = ResilientDBConnector.get_engine_with_retry('staging')
         except Exception as e:
-            logger.error(f"❌ Failed to connect to Production PostgreSQL: {e}")
+            logger.error(f"❌ Failed to connect to Staging PostgreSQL after retries: {e}")
             raise
         
         try:
-            self.hub_engine = get_db_engine('hub')
-            logger.info("✅ Connected to Local Hub PostgreSQL")
+            self.hub_engine = ResilientDBConnector.get_engine_with_retry('hub')
         except Exception as e:
-            logger.error(f"❌ Failed to connect to Local Hub: {e}")
+            logger.error(f"❌ Failed to connect to Local Hub after retries: {e}")
             raise
     
     def extract_from_supabase(self) -> pd.DataFrame:
-        """Extract products from Supabase PostgreSQL"""
+        """Extract ALL columns from Supabase products table"""
         logger.info("\n📥 EXTRACTING FROM SUPABASE POSTGRESQL")
         
         try:
             with self.supabase_engine.connect() as conn:
+                # Get ALL columns from the source table
                 df = pd.read_sql("""
-                    SELECT 
-                        id::text as raw_product_id,
-                        name as raw_product_name,
-                        created_at,
-                        'supabase_products' as source_table,
-                        'supabase' as source_db
-                    FROM public.products
-                    WHERE name IS NOT NULL 
-                      AND TRIM(name) != ''
-                      AND TRIM(name) != '0'
-                """, conn)
-            
-            self.stats['supabase_products'] = len(df)
-            logger.info(f"   ✅ Extracted {len(df)} products from Supabase")
-            return df
-            
-        except Exception as e:
-            logger.error(f"   ❌ Failed to extract from Supabase: {e}")
-            raise
-    
-    def extract_from_prod_postgres(self) -> tuple:
-        """Extract products and product_names from Production PostgreSQL"""
-        logger.info("\n📥 EXTRACTING FROM PRODUCTION POSTGRESQL (chipchip)")
-        
-        try:
-            with self.prod_pg_engine.connect() as conn:
-                # Extract products
-                df_products = pd.read_sql("""
-                    SELECT 
-                        id::text as raw_product_id,
-                        name as raw_product_name,
-                        created_at,
-                        'prod_pg_products' as source_table,
-                        'prod_postgres' as source_db
+                    SELECT *
                     FROM public.products
                     WHERE name IS NOT NULL 
                       AND TRIM(name) != ''
                       AND TRIM(name) != '0'
                 """, conn)
                 
-                # Extract product_names
-                df_product_names = pd.read_sql("""
-                    SELECT 
-                        id::text as raw_product_id,
-                        name as raw_product_name,
-                        created_at,
-                        'prod_pg_product_names' as source_table,
-                        'prod_postgres' as source_db
+                # Rename id and name for consistency
+                df = df.rename(columns={'id': 'raw_product_id', 'name': 'raw_product_name'})
+                
+                # Convert id to text
+                df['raw_product_id'] = df['raw_product_id'].astype(str)
+                
+                # Add metadata columns
+                df['source_table'] = 'supabase_products'
+                df['source_db'] = 'supabase'
+            
+            self.stats['supabase_products'] = len(df)
+            logger.info(f"   ✅ Extracted {len(df)} products from Supabase with {len(df.columns)} columns")
+            return df
+            
+        except Exception as e:
+            logger.error(f"   ❌ Failed to extract from Supabase: {e}")
+            raise
+    
+    def extract_from_staging(self):
+        """
+        Extract ALL columns from Staging PostgreSQL (ChipChip).
+        Queries both 'products' (joined with names) and 'product_names' tables.
+        """
+        if not self.staging_engine:
+            logger.warning("⚠️  Staging engine not initialized. Skipping Staging extraction.")
+            return pd.DataFrame(), pd.DataFrame()
+        
+        logger.info("\n📥 EXTRACTING FROM STAGING POSTGRESQL (chipchip)")
+        
+        try:
+            with self.staging_engine.connect() as conn:
+                # 1. Fetch ALL columns from product_names
+                logger.info("   → Fetching from 'product_names' table...")
+                df_names = pd.read_sql(text("""
+                    SELECT *
                     FROM public.product_names
                     WHERE name IS NOT NULL 
                       AND TRIM(name) != ''
-                      AND TRIM(name) != '0'
-                """, conn)
-            
-            self.stats['prod_pg_products'] = len(df_products)
-            self.stats['prod_pg_product_names'] = len(df_product_names)
-            
-            logger.info(f"   ✅ Extracted {len(df_products)} from products table")
-            logger.info(f"   ✅ Extracted {len(df_product_names)} from product_names table")
-            
-            return df_products, df_product_names
-            
+                """), conn)
+                
+                # Rename columns for consistency
+                df_names = df_names.rename(columns={'id': 'raw_product_id', 'name': 'raw_product_name'})
+                df_names['raw_product_id'] = df_names['raw_product_id'].astype(str)
+                
+                # Add metadata columns
+                df_names['source_table'] = 'staging_product_names'
+                df_names['source_db'] = 'staging_postgres'
+                
+                # 2. Fetch ALL columns from products (joined with names)
+                logger.info("   → Fetching from 'products' table (joined)...")
+                df_products = pd.read_sql(text("""
+                    SELECT 
+                        p.*,
+                        pn.name as raw_product_name
+                    FROM public.products p
+                    LEFT JOIN public.product_names pn ON p.name_id = pn.id
+                    WHERE pn.name IS NOT NULL
+                      AND TRIM(pn.name) != ''
+                      AND p.deleted_at IS NULL
+                """), conn)
+                
+                # Rename id column for consistency
+                df_products = df_products.rename(columns={'id': 'raw_product_id'})
+                df_products['raw_product_id'] = df_products['raw_product_id'].astype(str)
+                
+                # Add metadata columns
+                df_products['source_table'] = 'staging_products'
+                df_products['source_db'] = 'staging_postgres'
+                
+                self.stats['staging_products'] = len(df_products)
+                self.stats['staging_product_names'] = len(df_names)
+                
+                logger.info(f"   ✅ Extracted {len(df_names)} names ({len(df_names.columns)} cols) and {len(df_products)} products ({len(df_products.columns)} cols) from Staging")
+                return df_products, df_names
+                
         except Exception as e:
-            logger.error(f"   ❌ Failed to extract from Production PostgreSQL: {e}")
-            raise
+            logger.error(f"   ❌ Failed to extract from Staging PostgreSQL: {e}")
+            return pd.DataFrame(), pd.DataFrame()
     
     def transform_and_standardize(self, combined_df: pd.DataFrame) -> pd.DataFrame:
-        """Apply standardization mapping to create canonical master"""
+        """Apply standardization mapping with validation and fuzzy matching"""
         logger.info("\n🔄 TRANSFORMING AND STANDARDIZING")
         
         if combined_df.empty:
             logger.warning("   ⚠️  No data to transform")
             return pd.DataFrame()
         
-        df = combined_df.copy()
+        # STEP 1: Data Validation
+        logger.info("\n📋 STEP 1: DATA VALIDATION")
+        df, validation_stats = self.data_validator.validate_dataframe(combined_df)
+        self.stats['validation_removed'] = validation_stats['total_removed']
         
-        # Clean product names
-        logger.info("   → Cleaning product names...")
+        if df.empty:
+            logger.error("❌ No valid data remaining after validation")
+            return pd.DataFrame()
+        
+        # STEP 2: Clean product names
+        logger.info("\n🧹 STEP 2: CLEANING PRODUCT NAMES")
+        logger.info("   → Normalizing whitespace and case...")
         df['cleaned_name'] = df['raw_product_name'].apply(
             lambda x: re.sub(r'\s+', ' ', str(x)).strip().lower()
         )
         
-        # Apply parent-child mapping
-        logger.info("   → Applying parent-child mapping...")
+        # STEP 3: Apply parent-child mapping
+        logger.info("\n🗺️  STEP 3: APPLYING PARENT-CHILD MAPPING")
+        logger.info("   → Trying exact matches first...")
         df['parent_name'] = df['cleaned_name'].map(CHILD_TO_PARENT_MAP)
         
-        # For unmapped products, use original name as parent
+        # Count exact matches
+        exact_matched = df['parent_name'].notna().sum()
+        logger.info(f"   ✅ Exact matches: {exact_matched:,} products")
+        
+        # STEP 4: Apply fuzzy matching for unmapped products
+        if self.enable_fuzzy_matching and self.fuzzy_matcher:
+            logger.info("\n🔍 STEP 4: APPLYING FUZZY MATCHING")
+            
+            # Get unmapped products
+            unmapped_mask = df['parent_name'].isna()
+            unmapped_count = unmapped_mask.sum()
+            
+            if unmapped_count > 0:
+                logger.info(f"   → Attempting fuzzy match for {unmapped_count:,} unmapped products...")
+                
+                # Apply fuzzy matching
+                df.loc[unmapped_mask, 'parent_name'] = df.loc[unmapped_mask, 'raw_product_name'].apply(
+                    self.fuzzy_matcher.find_parent
+                )
+                
+                # Get fuzzy match stats
+                fuzzy_stats = self.fuzzy_matcher.get_stats()
+                self.stats['fuzzy_matched'] = fuzzy_stats['fuzzy_matches']
+                
+                if not self.fuzzy_dry_run and fuzzy_stats['fuzzy_matches'] > 0:
+                    logger.info(f"   ✅ Fuzzy matched: {fuzzy_stats['fuzzy_matches']:,} products")
+                elif self.fuzzy_dry_run and fuzzy_stats['fuzzy_matches'] > 0:
+                    logger.info(f"   💡 [DRY RUN] Would fuzzy match: {fuzzy_stats['fuzzy_matches']:,} products")
+                    logger.info(f"      Set fuzzy_dry_run=False to enable fuzzy matching")
+        else:
+            logger.info("\n⏭️  STEP 4: FUZZY MATCHING DISABLED")
+        
+        # STEP 5: For still unmapped products, use original name as parent
         df['parent_name'] = df['parent_name'].fillna(df['raw_product_name'])
         
-        # Count mapped vs unmapped
+        # Final statistics
         mapped = df['cleaned_name'].isin(CHILD_TO_PARENT_MAP).sum()
         unmapped = len(df) - mapped
         self.stats['mapped_products'] = mapped
         self.stats['unmapped_products'] = unmapped
         
-        logger.info(f"   ✅ Mapped: {mapped} products")
-        logger.info(f"   ⚠️  Unmapped: {unmapped} products (will use original name)")
+        logger.info(f"\n📊 MAPPING SUMMARY:")
+        logger.info(f"   • Total products: {len(df):,}")
+        logger.info(f"   • Exact matches: {mapped:,}")
+        logger.info(f"   • Fuzzy matches: {self.stats['fuzzy_matched']:,}")
+        logger.info(f"   • Unmapped (self-mapped): {unmapped:,}")
         
-        # Convert timestamps
-        logger.info("   → Converting timestamps...")
+        mapping_rate = (mapped / len(df) * 100) if len(df) > 0 else 0
+        logger.info(f"   • Exact match rate: {mapping_rate:.1f}%")
+        
+        # STEP 6: Convert timestamps
+        logger.info("\n📅 STEP 5: CONVERTING TIMESTAMPS")
         df['created_at'] = pd.to_datetime(df['created_at'], errors='coerce', utc=True)
         
-        # Aggregate by parent to get earliest created_at and source
-        logger.info("   → Aggregating by parent product...")
+        # STEP 7: Aggregate by parent to get earliest created_at and source
+        logger.info("\n📦 STEP 6: AGGREGATING BY PARENT PRODUCT")
         parent_groups = df.groupby('parent_name').agg({
             'created_at': lambda x: x.dropna().min() if not x.dropna().empty else None,
             'source_db': lambda x: x.iloc[0] if len(x) > 0 else None  # First occurrence source
         }).reset_index()
         
-        # Generate stable UUIDs for parent products
-        logger.info("   → Generating parent product IDs...")
+        # STEP 8: Generate stable UUIDs for parent products
+        logger.info("   → Generating stable parent product IDs...")
         parent_groups['parent_product_id'] = parent_groups['parent_name'].apply(_generate_stable_uuid)
+        
+        # Rename parent_name to parent_product_name to match DB
+        parent_groups = parent_groups.rename(columns={'parent_name': 'parent_product_name'})
         
         # Final canonical master table
         canonical_df = parent_groups[[
             'parent_product_id',
-            'parent_name',
+            'parent_product_name',
             'source_db',
             'created_at'
         ]].copy()
@@ -205,15 +319,39 @@ class ProductionETLPipeline:
         # Rename source_db to source for clarity
         canonical_df = canonical_df.rename(columns={'source_db': 'source'})
         
-        canonical_df = canonical_df.sort_values('parent_name').reset_index(drop=True)
+        canonical_df = canonical_df.sort_values('parent_product_name').reset_index(drop=True)
         
         self.stats['parent_products'] = len(canonical_df)
-        logger.info(f"   ✅ Created {len(canonical_df)} parent products")
+        logger.info(f"   ✅ Created {len(canonical_df):,} parent products")
         
         return canonical_df
     
-    def upsert_canonical_master(self, canonical_df: pd.DataFrame, engine, db_name: str):
-        """UPSERT canonical master table (no data loss)"""
+    
+    def _map_dataframe_ids(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Helper to add parent_product_id and parent_product_name to a dataframe"""
+        def get_parent_info(name):
+            if not name:
+                return None, None
+            cleaned = re.sub(r'\s+', ' ', str(name)).strip().lower()
+            parent_name = CHILD_TO_PARENT_MAP.get(cleaned, name)
+            parent_id = _generate_stable_uuid(parent_name)
+            return parent_id, parent_name
+            
+        temp_df = df.copy()
+        if 'raw_product_name' in temp_df.columns:
+            name_col = 'raw_product_name'
+        elif 'name' in temp_df.columns:
+            name_col = 'name'
+        else:
+            return temp_df
+            
+        temp_df[['parent_product_id', 'parent_product_name']] = temp_df[name_col].apply(
+            lambda x: pd.Series(get_parent_info(x))
+        )
+        return temp_df
+
+    def upsert_standard_products(self, canonical_df: pd.DataFrame, engine, db_name: str):
+        """UPSERT hub_standard_products table (no data loss)"""
         logger.info(f"\n💾 UPSERTING CANONICAL MASTER TO {db_name}")
         
         if canonical_df.empty:
@@ -222,28 +360,26 @@ class ProductionETLPipeline:
         
         try:
             with engine.begin() as conn:
-                # Create temp table
                 canonical_df.to_sql(
-                    'canonical_products_master_temp',
+                    'hub_standard_products_temp',
                     conn,
                     if_exists='replace',
                     index=False
                 )
                 
-                # UPSERT query
+                # UPSERT query targeting 'hub_standard_products'
                 conn.execute(text("""
-                    INSERT INTO canonical_products_master 
-                        (parent_product_id, parent_name, created_at)
-                    SELECT parent_product_id, parent_name, created_at
-                    FROM canonical_products_master_temp
+                    INSERT INTO hub_standard_products 
+                        (parent_product_id, parent_product_name, created_at)
+                    SELECT parent_product_id, parent_product_name, created_at
+                    FROM hub_standard_products_temp
                     ON CONFLICT (parent_product_id) 
                     DO UPDATE SET 
-                        parent_name = EXCLUDED.parent_name,
-                        updated_at = NOW()
+                        parent_product_name = EXCLUDED.parent_product_name
                 """))
                 
                 # Drop temp table
-                conn.execute(text("DROP TABLE canonical_products_master_temp"))
+                conn.execute(text("DROP TABLE hub_standard_products_temp"))
             
             logger.info(f"   ✅ Upserted {len(canonical_df)} parent products to {db_name}")
             
@@ -315,19 +451,32 @@ class ProductionETLPipeline:
         duration = (end_time - self.stats['start_time']).total_seconds()
         
         logger.info(f"\n⏱️  Execution Time: {duration:.2f} seconds")
+        
         logger.info(f"\n📥 Data Extraction:")
         logger.info(f"   • Supabase products: {self.stats['supabase_products']:,}")
-        logger.info(f"   • Production PostgreSQL products: {self.stats['prod_pg_products']:,}")
-        logger.info(f"   • Production PostgreSQL product_names: {self.stats['prod_pg_product_names']:,}")
+        logger.info(f"   • Staging PostgreSQL products: {self.stats['staging_products']:,}")
+        logger.info(f"   • Staging PostgreSQL product_names: {self.stats['staging_product_names']:,}")
         logger.info(f"   • Total products extracted: {self.stats['total_products']:,}")
         
+        logger.info(f"\n🔍 Data Validation:")
+        logger.info(f"   • Records removed (bad data): {self.stats['validation_removed']:,}")
+        validation_rate = (self.stats['validation_removed'] / self.stats['total_products'] * 100) if self.stats['total_products'] > 0 else 0
+        logger.info(f"   • Removal rate: {validation_rate:.2f}%")
+        
         logger.info(f"\n🔄 Transformation:")
-        logger.info(f"   • Mapped products: {self.stats['mapped_products']:,}")
-        logger.info(f"   • Unmapped products: {self.stats['unmapped_products']:,}")
+        logger.info(f"   • Exact mapped products: {self.stats['mapped_products']:,}")
+        logger.info(f"   • Fuzzy matched products: {self.stats['fuzzy_matched']:,}")
+        logger.info(f"   • Unmapped products (self-mapped): {self.stats['unmapped_products']:,}")
         logger.info(f"   • Parent products created: {self.stats['parent_products']:,}")
         
         mapping_rate = (self.stats['mapped_products'] / self.stats['total_products'] * 100) if self.stats['total_products'] > 0 else 0
-        logger.info(f"   • Mapping coverage: {mapping_rate:.1f}%")
+        logger.info(f"   • Exact mapping coverage: {mapping_rate:.1f}%")
+        
+        if self.enable_fuzzy_matching and self.fuzzy_matcher:
+            self.fuzzy_matcher.print_stats()
+            if self.fuzzy_dry_run:
+                logger.info(f"\n💡 FUZZY MATCHING IN DRY RUN MODE")
+                logger.info(f"   To enable fuzzy matching, set fuzzy_dry_run=False when initializing pipeline")
         
         logger.info(f"\n💾 Data Loading:")
         logger.info(f"   ✅ Canonical master updated in 3 databases")
@@ -352,11 +501,11 @@ class ProductionETLPipeline:
             
             # Step 2: Extract from all sources
             df_supabase = self.extract_from_supabase()
-            df_prod_products, df_prod_names = self.extract_from_prod_postgres()
+            df_staging_products, df_staging_names = self.extract_from_staging()
             
             # Step 3: Combine all data
             logger.info("\n🔗 COMBINING DATA FROM ALL SOURCES")
-            combined_df = pd.concat([df_supabase, df_prod_products, df_prod_names], ignore_index=True)
+            combined_df = pd.concat([df_supabase, df_staging_products, df_staging_names], ignore_index=True)
             self.stats['total_products'] = len(combined_df)
             logger.info(f"   ✅ Combined {len(combined_df)} total products")
             
@@ -369,30 +518,69 @@ class ProductionETLPipeline:
             
             # Step 5: Load canonical master to all databases
             logger.info("\n" + "=" * 80)
-            logger.info("💾 LOADING CANONICAL MASTER TO ALL DATABASES")
+            logger.info("💾 LOADING CANONICAL MASTER TO DATABASES")
             logger.info("=" * 80)
             
-            self.upsert_canonical_master(canonical_master, self.supabase_engine, "Supabase PostgreSQL")
-            self.upsert_canonical_master(canonical_master, self.prod_pg_engine, "Production PostgreSQL")
-            self.upsert_canonical_master(canonical_master, self.hub_engine, "Local Hub")
+            # READ-ONLY MODE: Scoping writes to Local Hub ONLY
+            logger.info("   🔒 READ-ONLY MODE: Skipping updates to Supabase and Staging")
+            # self.upsert_canonical_master(canonical_master, self.supabase_engine, "Supabase PostgreSQL")
+            # self.upsert_canonical_master(canonical_master, self.staging_engine, "Staging PostgreSQL")
             
-            # Step 6: Update parent IDs in source tables
+            # Write to Local Hub
+            self.upsert_standard_products(canonical_master, self.hub_engine, "Local Hub")
+            
+            # Step 6: Save mapped results to local hub (since source is read-only)
             logger.info("\n" + "=" * 80)
-            logger.info("🔗 UPDATING PARENT IDs IN SOURCE TABLES")
+            logger.info("💾 SAVING MAPPED RESULTS TO LOCAL HUB")
             logger.info("=" * 80)
             
-            self.update_parent_ids_batch(self.supabase_engine, 'products', 'Supabase')
-            self.update_parent_ids_batch(self.prod_pg_engine, 'products', 'Production PostgreSQL')
-            self.update_parent_ids_batch(self.prod_pg_engine, 'product_names', 'Production PostgreSQL')
+            # Save to supabase_products (local copy with parent_product_id)
+            if not df_supabase.empty:
+                df_sup_with_ids = self._map_dataframe_ids(df_supabase)
+                
+                # Restore original column names and remove metadata
+                df_to_save = df_sup_with_ids.copy()
+                df_to_save = df_to_save.rename(columns={'raw_product_id': 'id', 'raw_product_name': 'name'})
+                
+                # Remove internal metadata columns, keep only parent_product_id
+                cols_to_drop = ['source_table', 'source_db', 'parent_product_name']
+                df_to_save = df_to_save.drop(columns=[c for c in cols_to_drop if c in df_to_save.columns])
+                
+                df_to_save.to_sql('supabase_products', self.hub_engine, if_exists='replace', index=False)
+                logger.info(f"   ✅ Saved {len(df_to_save)} mapped Supabase records to supabase_products ({len(df_to_save.columns)} columns)")
+
+            # Save to clickhouse_product_names (local copy with parent_product_id)
+            df_staging_combined = pd.concat([df_staging_products, df_staging_names], ignore_index=True)
+            if not df_staging_combined.empty:
+                df_staging_with_ids = self._map_dataframe_ids(df_staging_combined)
+                
+                # Restore original column names and remove metadata
+                df_to_save = df_staging_with_ids.copy()
+                df_to_save = df_to_save.rename(columns={'raw_product_id': 'id', 'raw_product_name': 'name'})
+                
+                # Remove internal metadata columns, keep only parent_product_id
+                cols_to_drop = ['source_table', 'source_db', 'parent_product_name']
+                df_to_save = df_to_save.drop(columns=[c for c in cols_to_drop if c in df_to_save.columns])
+                
+                df_to_save.to_sql('clickhouse_product_names', self.hub_engine, if_exists='replace', index=False)
+                logger.info(f"   ✅ Saved {len(df_to_save)} mapped Staging records to clickhouse_product_names ({len(df_to_save.columns)} columns)")
+
+
             
-            # Step 7: Generate report
+            # Step 7: Export fuzzy matches for review
+            if self.enable_fuzzy_matching and self.fuzzy_matcher:
+                logger.info("\n" + "=" * 80)
+                logger.info("📝 EXPORTING FUZZY MATCHES FOR REVIEW")
+                logger.info("=" * 80)
+                self.fuzzy_matcher.export_fuzzy_matches('logs/fuzzy_matches_review.csv')
+            
+            # Step 8: Generate report
             self.generate_report()
             
             return True
             
         except Exception as e:
             logger.error(f"\n❌ PIPELINE FAILED: {e}")
-            import traceback
             traceback.print_exc()
             return False
 

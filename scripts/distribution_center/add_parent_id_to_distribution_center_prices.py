@@ -11,6 +11,7 @@ import os
 import sys
 import uuid
 import re
+import ast
 
 # Add the parent directory to the path so we can import config and utils
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -61,10 +62,8 @@ def get_distribution_center_master_data():
                     'parent_id': parent_id
                 }
                 
-                # Add all child names
                 if row['child_product_names']:
                     try:
-                        import ast
                         child_names = ast.literal_eval(row['child_product_names'])
                         for child_name in child_names:
                             parent_mapping[child_name.lower().strip()] = {

@@ -8,8 +8,9 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 import os
-from datetime import datetime
 import sys
+import traceback
+from datetime import datetime
 
 # Add utils to path
 sys.path.append(os.path.join(os.path.dirname(__file__)))
@@ -76,7 +77,6 @@ def fetch_from_remote_supabase(remote_engine):
             
     except Exception as e:
         print(f"❌ Error fetching from remote Supabase: {e}")
-        import traceback
         traceback.print_exc()
         return pd.DataFrame()
 
@@ -135,7 +135,6 @@ def create_local_table(local_engine, table_name):
             
     except Exception as e:
         print(f"❌ Error creating local table: {e}")
-        import traceback
         traceback.print_exc()
         return False
 
@@ -182,7 +181,6 @@ def insert_data_to_local(local_engine, df, table_name, batch_size=1000):
                 
             except Exception as e:
                 print(f"   ❌ Batch {batch_num + 1}/{num_batches}: Error - {str(e)[:100]}")
-                import traceback
                 traceback.print_exc()
         
         print(f"\n✅ Successfully inserted {inserted_count:,} out of {total_records:,} records")
@@ -190,7 +188,6 @@ def insert_data_to_local(local_engine, df, table_name, batch_size=1000):
         
     except Exception as e:
         print(f"❌ Error during insertion: {e}")
-        import traceback
         traceback.print_exc()
         return False
 
@@ -260,7 +257,6 @@ def verify_local_table(local_engine, table_name):
             
     except Exception as e:
         print(f"❌ Error verifying local table: {e}")
-        import traceback
         traceback.print_exc()
         return False
 
@@ -323,7 +319,6 @@ def main():
         
     except Exception as e:
         print(f"\n❌ Error in main process: {e}")
-        import traceback
         traceback.print_exc()
 
 if __name__ == "__main__":

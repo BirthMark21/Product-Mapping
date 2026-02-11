@@ -8,6 +8,7 @@ import sys
 import os
 import json
 import subprocess
+import argparse
 from datetime import datetime
 
 # Add parent directory to path for imports
@@ -124,8 +125,6 @@ fi
 
 def main():
     """Main function"""
-    
-    import argparse
     
     parser = argparse.ArgumentParser(description='Git-based Dynamic Mapping Trigger')
     parser.add_argument('--check', action='store_true',
