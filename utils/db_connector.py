@@ -1,26 +1,14 @@
-# utils/db_connector.py
-
 import os
+from urllib.parse import quote_plus
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
 
-# Although settings.py also loads this, it's good practice for this
-# self-contained utility to ensure environment variables are loaded.
 load_dotenv()
 
 def get_db_engine(db_type: str):
-    """
-    Creates and configures a SQLAlchemy engine for the specified database.
-    It reads credentials from environment variables (loaded from .env file).
-
-    Args:
-        db_type (str): The type of database to connect to.
-                       Valid options are 'supabase', 'clickhouse', or 'hub'.
-    """
-    # This dictionary maps the db_type to the correct environment variable prefixes.
-    # This keeps the code clean and avoids repetition.
     DB_CONFIGS = {
-        'supabase':   {'prefix': 'PG',         'log_name': 'SOURCE (Supabase/PostgreSQL)'},
+        'supabase':   {'prefix': 'PG',         'log_name': 'SOURCE (Supply Chain Supabase/PostgreSQL)'},
+        'b2b':        {'prefix': 'SUPABASE_PG', 'log_name': 'SOURCE (B2B Supabase/PostgreSQL)'},
         'clickhouse': {'prefix': 'CLICKHOUSE', 'log_name': 'SOURCE (ClickHouse)'},
         'hub':        {'prefix': 'HUB_PG',     'log_name': 'DESTINATION (PostgreSQL Hub)'},
         'staging':    {'prefix': 'STAGING_PG', 'log_name': 'SOURCE (Staging PostgreSQL)'}
@@ -37,8 +25,7 @@ def get_db_engine(db_type: str):
 
     try:
         engine = None
-        # --- Logic for PostgreSQL connections (Supabase, Hub, and Staging) ---
-        if db_type in ('supabase', 'hub', 'staging'):
+        if db_type in ('supabase', 'b2b', 'hub', 'staging'):
             host = os.getenv(f"{prefix}_HOST")
             port = os.getenv(f"{prefix}_PORT")
             db_name = os.getenv(f"{prefix}_DB_NAME")
@@ -46,15 +33,13 @@ def get_db_engine(db_type: str):
             password = os.getenv(f"{prefix}_PASSWORD")
 
             if not all([host, port, db_name, user, password]):
-                raise ValueError(f"Missing one or more PostgreSQL environment variables for '{log_name}'.")
+                raise ValueError(f"Missing PostgreSQL environment variables for '{log_name}'.")
 
-            conn_str = f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
+            encoded_password = quote_plus(password)
+            conn_str = f"postgresql://{user}:{encoded_password}@{host}:{port}/{db_name}"
             engine = create_engine(conn_str)
 
-        # --- Logic for ClickHouse connection ---
         elif db_type == 'clickhouse':
-            # For ClickHouse, we return None since we handle it directly in data_loader
-            # This is a workaround since we use clickhouse-connect directly
             print(f"SUCCESS: ClickHouse connection will be handled directly in data loader.")
             return None
 

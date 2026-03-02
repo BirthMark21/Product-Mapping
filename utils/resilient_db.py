@@ -1,22 +1,16 @@
 #!/usr/bin/env python3
-"""
-Database Connection with Retry Logic
-Handles transient database failures with automatic retry
-"""
-
+import os
+import logging
+from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError, DatabaseError
-import logging
-import os
-from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 
 class ResilientDBConnector:
-    """Database connector with retry logic and connection pooling"""
     
     @staticmethod
     @retry(
@@ -26,21 +20,9 @@ class ResilientDBConnector:
         reraise=True
     )
     def get_engine_with_retry(db_type: str):
-        """
-        Get database engine with automatic retry on failure
-        
-        Args:
-            db_type: Type of database ('supabase', 'prod_postgres', 'hub')
-        
-        Returns:
-            SQLAlchemy engine
-        
-        Raises:
-            ValueError: If db_type is invalid
-            Exception: If connection fails after all retries
-        """
         DB_CONFIGS = {
-            'supabase': {'prefix': 'PG', 'log_name': 'Supabase PostgreSQL'},
+            'supabase': {'prefix': 'PG', 'log_name': 'Supply Chain Supabase PostgreSQL'},
+            'b2b': {'prefix': 'SUPABASE_PG', 'log_name': 'B2B Supabase PostgreSQL'},
             'prod_postgres': {'prefix': 'PROD_PG', 'log_name': 'Production PostgreSQL'},
             'hub': {'prefix': 'HUB_PG', 'log_name': 'Local Hub PostgreSQL'},
             'staging': {'prefix': 'STAGING_PG', 'log_name': 'Staging PostgreSQL'}
@@ -98,17 +80,6 @@ class ResilientDBConnector:
         reraise=True
     )
     def execute_with_retry(engine, query, params=None):
-        """
-        Execute query with automatic retry
-        
-        Args:
-            engine: SQLAlchemy engine
-            query: SQL query string or text() object
-            params: Optional query parameters
-        
-        Returns:
-            Query result
-        """
         try:
             with engine.connect() as conn:
                 if params:

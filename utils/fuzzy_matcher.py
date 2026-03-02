@@ -1,35 +1,15 @@
 #!/usr/bin/env python3
-"""
-Fuzzy Product Matcher
-Handles fuzzy string matching for product names to reduce manual mapping work
-"""
-
-from fuzzywuzzy import fuzz, process
-import logging
 import re
+import logging
 from typing import Optional, Tuple
+from fuzzywuzzy import fuzz, process
 
 logger = logging.getLogger(__name__)
 
 
 class FuzzyProductMatcher:
-    """
-    Fuzzy matching for product names
-    
-    Uses fuzzy string matching to find similar parent products even when
-    there are typos, spacing variations, or minor differences.
-    """
     
     def __init__(self, parent_mapping: dict, child_to_parent_map: dict, threshold: int = 85, dry_run: bool = True):
-        """
-        Initialize fuzzy matcher
-        
-        Args:
-            parent_mapping: Dictionary of parent -> children mappings
-            child_to_parent_map: Reverse mapping of child -> parent
-            threshold: Minimum similarity score (0-100) to accept a match
-            dry_run: If True, log matches but don't actually use them
-        """
         self.parent_names = list(parent_mapping.keys())
         self.child_to_parent_map = child_to_parent_map
         self.threshold = threshold
@@ -52,20 +32,6 @@ class FuzzyProductMatcher:
         logger.info(f"   • Mode: {'DRY RUN (logging only)' if self.dry_run else 'ACTIVE'}")
     
     def find_parent(self, product_name: str) -> str:
-        """
-        Find parent product for a given product name
-        
-        Process:
-        1. Try exact match first (fast)
-        2. If not found, try fuzzy match (slower but smarter)
-        3. If still not found, return original name (self-mapping)
-        
-        Args:
-            product_name: Raw product name to match
-        
-        Returns:
-            Parent product name
-        """
         self.stats['total_queries'] += 1
         
         if not product_name:
@@ -98,15 +64,6 @@ class FuzzyProductMatcher:
         return product_name
     
     def _find_fuzzy_match(self, product_name: str) -> Tuple[Optional[str], int]:
-        """
-        Find best fuzzy match for a product name
-        
-        Args:
-            product_name: Product name to match
-        
-        Returns:
-            (best_match_name, similarity_score)
-        """
         # Check cache
         if product_name in self.fuzzy_cache:
             return self.fuzzy_cache[product_name]
@@ -114,15 +71,12 @@ class FuzzyProductMatcher:
         if not self.parent_names:
             return None, 0
         
-        # Use token_sort_ratio for better matching
-        # This handles word order differences: "Apple Mango" vs "Mango Apple"
         best_match, score = process.extractOne(
             product_name,
             self.parent_names,
             scorer=fuzz.token_sort_ratio
         )
         
-        # Cache result
         self.fuzzy_cache[product_name] = (best_match, score)
         
         return best_match, score
@@ -153,12 +107,6 @@ class FuzzyProductMatcher:
         logger.info("=" * 80)
     
     def export_fuzzy_matches(self, output_file: str = 'logs/fuzzy_matches_review.csv'):
-        """
-        Export fuzzy matches to CSV for manual review
-        
-        Args:
-            output_file: Path to output CSV file
-        """
         import pandas as pd
         import os
         
@@ -166,10 +114,8 @@ class FuzzyProductMatcher:
             logger.warning("No fuzzy matches to export")
             return
         
-        # Create logs directory if it doesn't exist
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         
-        # Convert cache to DataFrame
         data = []
         for product_name, (matched_parent, score) in self.fuzzy_cache.items():
             if score >= self.threshold:

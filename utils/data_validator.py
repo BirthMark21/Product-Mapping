@@ -1,19 +1,13 @@
 #!/usr/bin/env python3
-"""
-Data Quality Validator
-Validates product data before processing to prevent bad data from entering the system
-"""
-
-import pandas as pd
 import re
-from datetime import datetime, timedelta
 import logging
+import pandas as pd
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
 
 class ProductDataValidator:
-    """Comprehensive data quality validation for product data"""
     
     def __init__(self):
         self.validation_rules = {
@@ -27,13 +21,19 @@ class ProductDataValidator:
                 r'^\d+$',  # Only numbers
                 r'^[^a-zA-Z0-9]+$',  # Only special chars
             ],
-            'suspicious_chars': ['�', '???', 'NULL', 'null', 'undefined', 'None']
+            'suspicious_chars': ['�', '???', 'NULL', 'null', 'undefined', 'None'],
+            'excluded_products': [
+                'White Onion A',
+                'White Onion B', 
+                'White Onion C'
+            ]
         }
         self.issues = []
         self.stats = {
             'total_input': 0,
             'null_names': 0,
             'test_data': 0,
+            'excluded_products': 0,
             'encoding_issues': 0,
             'invalid_length': 0,
             'future_dates': 0,
@@ -43,12 +43,6 @@ class ProductDataValidator:
         }
     
     def validate_product_name(self, name: str) -> tuple[bool, list]:
-        """
-        Validate a single product name
-        
-        Returns:
-            (is_valid, issues_list)
-        """
         issues = []
         
         if not name or not isinstance(name, str):
@@ -74,15 +68,6 @@ class ProductDataValidator:
         return len(issues) == 0, issues
     
     def validate_dataframe(self, df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-        """
-        Validate entire DataFrame and return cleaned version
-        
-        Args:
-            df: Input DataFrame with columns: raw_product_id, raw_product_name, created_at, source_db
-        
-        Returns:
-            (cleaned_df, stats_dict)
-        """
         logger.info("\n🔍 RUNNING DATA QUALITY CHECKS")
         logger.info("=" * 80)
         
@@ -111,6 +96,17 @@ class ProductDataValidator:
         if self.stats['test_data'] > 0:
             logger.warning(f"   ⚠️  Found {self.stats['test_data']} test/dummy products - removing")
             df = df[~test_mask]
+        
+        # 2b. Check for excluded products
+        logger.info("   → Checking for excluded products...")
+        excluded_mask = df['raw_product_name'].isin(self.validation_rules['excluded_products'])
+        excluded_count = excluded_mask.sum()
+        self.stats['excluded_products'] = excluded_count
+        
+        if excluded_count > 0:
+            logger.warning(f"   ⚠️  Found {excluded_count} excluded products - removing")
+            logger.info(f"      Excluded: {', '.join(df[excluded_mask]['raw_product_name'].unique())}")
+            df = df[~excluded_mask]
         
         # 3. Check for encoding issues
         logger.info("   → Checking for encoding issues...")

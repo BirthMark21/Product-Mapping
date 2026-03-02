@@ -1,697 +1,500 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
+import os
+import sys
+import uuid
+import re
 import pandas as pd
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
-import os
-import uuid
-import re
-import sys
-import requests
-import json
-import traceback
 from utils.db_connector import get_db_engine
 
-# Load environment variables
 load_dotenv()
-
-# ==============================================================================
-#  1. USER PROVIDED MAPPING & LOGIC
-# ==============================================================================
 
 NAMESPACE_UUID = uuid.UUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8')
 
 PARENT_CHILD_MAPPING = {
-    # --- VEGETABLES & FRUITS (Strictly Separated) ---
-    "Red Onion A": ["Red Onion A", "Red Onion Grade A", "Red Onion Grade A Restaurant q", "Red Onion Grade A Restaurant quality", "Red Onion", "Red Onion Qelafo"],
-    "Red Onion B": ["Red Onion B", "Red Onion Grade B"],
-    "Red Onion C": ["Red Onion C", "Red Onion Grade C", "Pilled Red onion"],
-    "Red Onion D": ["Red Onion D"],
-    "Small Red Onion": ["Small Red Onion"],
-    "Red Onion Elfora": ["Red Onion Elfora", "Redonion Elfora"],
-    "Red Onion (ሃበሻ)": ["Red Onion (ሃበሻ)", "Red onion ( ሃበሻ ) "],
-    "White Onion A": ["White Onion A"],
-    "White Onion B": ["White Onion B"],
-    "White Onion C": ["White Onion C"],
-
-    "Carrot": ["Carrot"],
-    "Carrot B": ["Carrot B"],
-    "Small Size Carrot": ["Small Size Carrot", "Small Carrot", "Small size Carrot"],
-
-    "Tomato A": ["Tomato A", "Tomatoes Grade A", "Tomato", "Tomato Restaurant Quality ", "Tomatoes A", "Tomato Grade A"],
-    "Tomato Ripe": ["Tomato/ Ripe/ Small size /", "Tomato Ripe"],
-    "Tomato B": ["Tomato B", "Tomatoes B", "Tomatoes Grade B"],
-    "Tomato Roma": ["Tomato Roma", "Tomato Beef"],
-
-    "Potato": ["Potato", "Potatoes", "Potatoes Restaurant quality", "Potatoes Restaurant Quality"],
-    "Potato Chips": ["Potato for Chips", "Potato Chips", "Potatoes Chips"],
-    "Potato Grade C": ["Potato Grade C", "Potato C"],
-    "Small Size Potato": ["Small size Potato", "Small Size Potato "],
-
-    "Chili Green": ["Chili Green", "Chilly Green"],
-    "Chilly Green (Starta)": ["Chilly Green (Starta)", "Green Chili", "Green Chilli", "Green Chili (ስታርታ)", "Chilly Green (Starter)"],
-    "Chilly Green Elfora": ["Chilly Green Elfora", "Chilly Green (Elfora)"],
-    "Green Pepper": ["Green Pepper", "green pepper"],
-    "Indian Chilly": ["Indian chilly", "indian chilly"],
-    "Chilly Short": ["Chilly short"],
-
-    "Beetroot": ["Beetroot", "beetroot", "Beet root"],
-    "Beetroot Small Size": ["Beetroot Small Size"],
-    "Small & Big Size Beetroot": ["Small & Big Size Beetroot"],
-
-    "White Cabbage": ["White Cabbage", "White Cabbage B", "White Cabbage (Large)", "White Cabbage (Small)", "White Cabbage (medium)", "whitecabbage", "White cabbage", "Cabbage"],
-    "Habesha Cabbage": ["Habesha Cabbage", "Habesha cabbage", "Gurage cabbage"],
-
+    "12 Piece Chicken": ["Chicken", "Chicken Groceries", "Regular Chicken Package", "Special Chicken Package", "BGS Foreign Chicken", "12 Piece Chicken", "12 piece Chicken", "Chicken Package", "Habesha Chicken", "Habesha Chicken Package"],
+    "2Bf Chocolate": ["2Bf Chocolate"],
+    "555 Laundry Soap": ["555 Laundry Soap", "555 Laundry soap"],
+    "555 Liquid Detergent": ["555 Liquid Detergent", "555 Liquid detergent"],
+    "ABC Diaper": ["ABC Diaper", "ABC Daiper"],
+    "Addis Tea": ["Addis tea", "Addis Tea"],
+    "Addis Tea Bag": ["Addis Tea Bag"],
+    "Afar Salt": ["Afar Salt"],
+    "Afro EIIDE Exercise Book": ["Afro Eiide Exercise book", "Afro EIIDE Exercise Book", "EIIDE Exercise Book (12 pieces)"],
+    "Aja Kinche": ["Aja kinche", "Aja Kinche"],
+    "Ajax Soap": ["Ajax Soap", "ajax soap", "Ajax (Large)"],
+    "Akkoo Coffee": ["Akkoo Coffee"],
+    "AL-Hinan Flour": ["AL-Hinan Flour", "AL-Hinan flour", "AL-Hinan Food Complex", "al Hilal flour"],
+    "Alem Card Holder": ["Alem Card Holder"],
+    "All in One Package": ["All in One Package"],
+    "Almadina Saad Dates": ["Almadina Saad Dates", "Saad Dates"],
+    "Almi Berbere": ["Almi Berbere"],
+    "Almi Dabo Kolo": ["Almi dabo kolo", "Almi Dabo Kolo", "Almi Dabo Kolo "],
+    "Almi Kolo": ["Almi kolo", "Almi Kolo", "Almi Kolo"],
+    "Almi Mitin Shiro": ["Almi Mitin Shiro"],
+    "Aloha Conditioner": ["Aloha Conditioner", "Aloha conditioner"],
+    "Aluu Sunflower Oil": ["Aluu Pure Sunflower Oil", "Aluu Sunflower Oil"],
+    "AMG Coffee": ["AMG Coffee", "AMG coffee", "Amg Coffee 50g", "AMG Coffee (Grinded)", "AMG Coffee (Roasted)", "AMG Grinded Coffee"],
+    "Ami White Honey": ["Ami White Honey", "ami white honey", "AMI White Honey"],
+    "Applack Baby Formula 1": ["Applack Baby Formula 1"],
+    "Apple": ["Apple", "Appel", "Apple B"],
+    "Basmati Rice": ["Basmati Rice", "basmati rice 5kg"],
+    "Kismet Basmati Rice": ["Kismet Basmati Rice"],
+    "Armella Mixed Fruit Jam": ["Armella Mixed Fruit Jam"],
+    "Asibeza Tikil Bundle": ["Asibeza Tikil Bundle", "Asibeza tikil bundle"],
+    "Ater Kik": ["Ater Kik"],
     "Avocado": ["Avocado", "Avocado A", "Avocado OG", "Avocado Shekaraw", "Local Avocado"],
     "Avocado B": ["Avocado B"],
+    "Avocado Hair Oil": ["Avocado Hair Oil", "Avo avocado hair oil"],
+    "Avocado Raw": ["Avocado Raw"],
     "Avocado Ripe": ["Ripe Avocado", "Avocado Ripe"],
-
-    "Strawberry": ["Strawberry"],
-    "Papaya": ["Papaya"],
-    "Papaya B": ["Papaya B"],
-    "Papaya Oversize": ["Papaya Oversize"],
-
-    "Cucumber": ["Cucumber"],
-    "Garlic": ["Garlic", "Garlic B", "garlic"],
+    "Avo Carrot Hair Oil": ["Avo Carrot Hair Oil", "Avo carrot", "avo avocado hair oil", "Avo carrot hair oil"],
+    "Aymi Geda Flour": ["Aymi Geda Flour"],
+    "Azzy Multi Functional": ["Azzy Multi Functional", "Azzy multi functional"],
+    "Baby Diaper": ["Baby Diaper", "B&B Baby diaper no1 to 5", "B&B Baby Diaper"],
+    "Baby Wipes": ["Baby Wipes", "B&b baby wipes", "B&B Baby Wipes", "ABC baby wipes", "Good Baby Wipes"],
+    "Bahja Sunflower Oil": ["Bahja Sunflower Oil"],
+    "Baking Powder": ["Baking Powder"],
+    "Banana": ["Banana", "Banana/ Raw ", "Banana/ Raw"],
+    "Barley Kinche": ["Barley Kinche", "Yegebes Kinche", "kinche yegebis", "Kinche Yegebs"],
+    "Beetroot": ["Beetroot", "beetroot", "Beet root"],
+    "Beetroot Small Size": ["Beetroot Small Size"],
+    "Befrekot Mitin Shiro": ["Befrekot Mitin Shiro"],
+    "Befrekot Pepper": ["Befrekot Pepper"],
+    "Bella Sanitary Pad": ["Bella sanitary pad", "Bella Sanitary Pad", "Bella Sanitary Pad ", "Eve sanitary pad"],
+    "Belt Bag": ["Belt Bag"],
+    "Besobila": ["Besobila"],
+    "Bethel Flour": ["bethel flour", "Bethel flour ", "Bethel flour", "Bethel Flour"],
+    "Big Bar Packs": ["Big Bar Packs", "Big bar packs"],
+    "Big Bites Pack": ["Big Bites Pack", "Big bites pack"],
+    "Bizce Sunflower Oil": ["Bizce Sunflower Oil"],
+    "Biya Weya Flour": ["Biya Weya Flour"],
+    "Black Lion Tea": ["Black Lion Tea", "Black lion tea", "Black Lion (40g)", "Black Lion Tea (80g)"],
+    "Bleach": ["Bleach", "bleach 5l"],
+    "Bonga Honey": ["Bonga Honey", "Bonga Mar"],
+    "Bourbon Cream Biscuit": ["Bourbon Cream Biscuit", "Bourbon cream biscuit", "bourbon cream biscuit", "Bourbon Cream Biscut"],
+    "Bravo Toilet Paper": ["Bravo Toilet Paper", "bravo toilet paper"],
+    "bravo table tissue": ["bravo table tissue", "Bravo Table Soft", "Bravo Table Tissue"],
+    "Bright Detergent": ["Bright Detergent", "bright detergent"],
+    "Broccoli": ["Broccoli", "Broccolis"],
+    "Brown Sugar (Fine)": ["Brown Sugar (Fine)"],
+    "Buna Pen": ["buna pen", "Buna Pen"],
+    "Buna Pencil": ["Buna Pencil", "Buna pencil"],
+    "Butter Cups Biscuit": ["Butter Cups Biscuit", "Butter cups biscuit", "Butter Cups Fasting Biscuit", "Beka ButterCups Fasting Biscut"],
+    "Butter Spice": ["Butter Spice"],
+    "BYMT Dish Soap": ["BYMT Dish Soap"],
+    "Canvas Bag": ["Canvas Bag"],
+    "Cardamon": ["Cardamon"],
+    "Cardigan": ["Cardigan", " Cardigan"],
+    "Carrot": ["Carrot", "Carrots"],
+    "Carrot B": ["Carrot B"],
+    "Casual Sweater": ["Casual Sweater"],
+    "Casual T-Shirt": ["Casual T-Shirt"],
+    "Cauliflower": ["Cauliflower"],
+    "Celery": ["Celery", "Parsley", "Leek", "Coriander"],
+    "Cerifam Fruit": ["Cerifam fruit", "cerifam fruit", "Cerifam Fruit ", "Cerifam Fruit"],
+    "Cerifam Normal": ["Cerifam Normal"],
+    "Cerifam Vegetable": ["Cerifam vegetable", "cerifam vegetable", "Cerifam Vegetable ", "Cerifam Vegetable"],
+    "Chapa Baking Powder": ["Chapa Baking Powder"],
+    "Cheese 500g": ["Cheese", "Ethiopian Cheese", "Cheese 500g", "አይብ"],
+    "Cheese Package": ["Cheese Package", "አይብ ጥቅል"],
+    "Chickpea": ["Chickpea", "Shembera"],
+    "Chili Green": ["Chili Green", "Chilly Green", "Chilly green"],
+    "Chilly Green (Starta)": ["Chilly Green (Starta)", "Green Chili", "Green Chilli", "Green Chili (ስታርታ)", "Chilly Green (Starter)"],
+    "Chilly Green Elfora": ["Chilly Green Elfora", "Chilly Green (Elfora)"],
+    "Chilly Short": ["Chilly Short", "Chilly short", "Chilli short", "Chili short"],
+    "ChipChip Umbrella": ["ChipChip Umbrella"],
+    "Chito Coffee": ["Chito Coffee", "Chito Coffee"],
+    "Choco Balls": ["Choco Balls"],
+    "Cinnamon Powder": ["Cinnamon Powder"],
+    "Cinni Krunches Biscuit": ["Cinni Krunches Biscuit", "Cinni Krunches biscuit", "Cinni Krunches Fasting Biscuit", "Beka Cinni Fasting Biscuit"],
+    "City Bird Basmati Rice": ["City Bird Basmati Rice"],
+    "CK Powdered Soap": ["CK laundary soap", "CK Powdered Soap", "Ck Powder Soap", "Ck powdered soap", "CK Laundry Soap", "CK Powdered Soap (40g)", "Ck powderd soap 40g", "ck powderd soap 150g", "ck powderd soap 1kg", "ck powderd soap 40g", "ck powderd soap 500g", "ck powderd soap 5kg"],
+    "Cleaning Bundle": ["Cleaning Bundle"],
+    "Cloud Bleach": ["cloud bleach 5L", "Cloud bleach ", "Cloud bleach ", "Cloud bleach", "Cloud Bleach", "Cloud Bleach / 1L", "Cloud Bleach / 5L"],
+    "Cloud Dish Wash": ["Cloud Dish Wash", "Cloud Dish Wash / 5L", "Cloud Dish Wash / 750ML"],
+    "Cloud Hand Wash": ["Cloud hand wash 5l", "Cloud Hand Wash"],
+    "Cloud Multipurpose": ["Cloud Multipurpose", "Cloud multipurpose", "cloud multipurpose", "Cloud Multi Purpose", "Cloud Multi Purpose/ 1L", "Cloud Multi Purpose/ 2L", "Cloud Multi Purpose/ 5L", "Cloud multi purpose 5l"],
+    "Cloud Toilet Cleaner": ["Cloud Toilet Cleaner"],
+    "Cloud Window Cleaner": ["Cloud Window Cleaner", "cloud window cleaner"],
+    "Coco Crunch": ["Coco Crunch"],
+    "Coffee (Wollega)": ["Coffee (Wollega)", "Coffee(Wollega)"],
+    "Coffee Late Cream Biscuit": ["Coffee Late Cream Biscuit", "Coffee late cream biscuit", "coffee late cream biscuit", "Coffee Latte Cream Biscuit"],
+    "Consul Olive Oil": ["Consul Olive Oil", "Cousul Olive Oil"],
+    "Cookies": ["Cookies"],
+    "Corn": ["Corn"],
+    "Corn Kinche": ["Corn kinche", "Corn Kinche ", "Corn Kinche"],
+    "Corn Starch": ["Corn starch", "Corn Starch ", "Corn Starch"],
+    "Cotton T-Shirt": ["Cotton T-Shirt", "Cotton T-shirt"],
+    "Cross-body Bag": ["Cross-body Bag", "Crossbody Bag"],
+    "Crown Laundry Detergent": ["Crown Laundry Detergent", "Crown powdered detergent (30g)", "Crown Powder Detergent (30g)", "Crown Powder Detergent (180gm)"],
+    "Crown Laundry Soap": ["Crown Laundry Soap (150g)", "Crown Laundary Soap (250g)", "Crown powdered soap (180g)", "Crown Laundry Soap"],
+    "Cucumber": ["Cucumber", "Cucumbers"],
+    "Custard Pie": ["Custard Pie"],
+    "Dabur Herbal Toothpaste": ["Dabur Herbal Toothpaste", "Dabur herbal tooth paste 150g", "Dabur herbal tooth paste 30g", "Dabur herbal tooth paste 50g", "Dabur Herbal Tooth Paste", "Dabur Tooth Paste (50g)"],
+    "Dachi Ketchup": ["Dachi ketchiup", "dachi ketchiup", "Dachi Ketchup", "Dachi Ketchup ", "Dachi Kethup"],
+    "Dachi Strawberry Jam (450g)": ["Dachi Strawberry Jam (450g)"],
+    "Dachi Vimto": ["dachi vimto", "Dachi Vimto"],
+    "Dachi Vinegar": ["dachi vinegar", "Dachi Vinegar"],
+    "Dainty Natural Shea Butter": ["Dainty Natural Shea Butter", "Dainty natural shea butter"],
+    "Dania Oil": ["Dania Oil", "Dania oils", "Dania Sunflower Cooking Oil"],
+    "Dania rice": ["Dania rice", "Dania Basmati Rice"],
+    "Dawedo Pepper": ["Dawed pepper ", "Dawed pepper", "Dawedo Pepper ", "Dawedo Pepper"],
+    "Delicious Package": ["Delicious Package"],
+    "Dexe Black Hair Shampoo": ["Dexe Black Hair Shampoo", "Dexe Black Hair shampoo"],
+    "Dh geda flour": ["DK GEDA FLOUR", "Dh geda flour"],
+    "Diana Soap": ["Diana Soap", "Diana soap 80g", "Diana Orange Toilet Soap (80gm)", "Diana Toilet Soap (20gm)", "Diana Toilet Soap (25gm)", "Diana Soap (80gm)"],
+    "Difo Package": ["Difo Package", "Difo package ", "Difo package", "ድፎ ጥቅል", "ዳቦ ጥቅል", "Defo Package", "Special Defo package"],
+    "Digis Table Salt": ["Digis Table Salt", "Digis table salt", "digis table salt"],
+    "Dish Wash": ["Dish Wash"],
+    "Diva Bar Soap": ["Diva Bar Soap", "Diva Bar Soap"],
+    "Duru Soap": ["DURU soap", "Duru Soap", "Duru Soap (180g)"],
+    "Easter Package": ["Easter Package"],
+    "Egg": ["Egg"],
+    "Eggplant": ["Eggplant", "Egg plant", "eggplant"],
+    "Elbow Macaroni": ["Elbow Macaroni", "Elbow Macaroni (Small)"],
+    "Elf Primer": ["Elf Primer"],
+    "Essential Pack": ["Essential Pack"],
+    "Elsa Kolo": ["Elsa Kolo"],
+    "Fafa Baby Food": ["Fafa Baby Food", "Fafa baby food"],
+    "Fargello Mango Juice": ["Fargello Mango Juice"],
+    "Fenet Grinded Coffee": ["Fenet Grinded Coffee"],
+    "Finger Biscuits": ["Finger Biscuits"],
+    "Fish Fillet": ["Fish Fillet"],
+    "Five Star Safety Matches": ["Five Star Safety Matches"],
+    "Flax Seed": ["Flax seed", "Flax Seed ", "Flax Seed"],
+    "Florida Glycerin": ["Florida Glycerin", "Florida Glycerin (50cc)", "Florida Glycerin (70cc)"],
+    "Flour": ["Flour", "flour"],
+    "Flour (3 Kilogram)": ["Flour (3 Kilogram)"],
+    "Football Jersey": ["Football Jersey"],
+    "Foreign’s Egg": ["Foreign’s Egg", "Foreign’s egg"],
+    "Fruit Package Bundle": ["Fruit Package Bundle", "Fruit package  bundle"],
+    "Fruity Rings": ["Fruity Rings"],
+    "Garlic": ["Garlic", "garlic"],
+    "Garlic B": ["Garlic B"],
     "Garlic China": ["Garlic China"],
     "Garlic Local": ["Garlic Local"],
     "Garlic Small Size": ["Garlic Small Size", "Garlic (የተፈለፈለ)", "Hatched Garlic"],
-
+    "Gebeya Lemne Tikil": ["Gebeya Lemne Tikil", "ገበያ ለምኔ ጥቅል"],
+    "Ghion Bleach": ["Ghion Bleach", "Ghion bleach"],
+    "Glass Wash": ["Glass Wash", "glass wash"],
     "Ginger": ["Ginger", "Ginger Local", "Ginger Thai"],
-    "Pineapple": ["Pineapple", "pineapple"],
-    "Pineapple B": ["Pineapple B"],
-    "Mango Apple": ["Mango Apple", "Apple Mango"],
-    "Lemon": ["Lemon", "lemon", "Lomen", "Lemon 250g", "Lime"],
-    "Orange Valencia": ["Orange", "Valencia Orange", "orange Valencia", "Valencia Orange"],
-    "Orange Yerer": ["Orange Yerer", "Yerer Orange", "Orange Yarer "],
-    "Orange Pineapple": ["Orange Pineapple", "Orange Pineapple "],
-    "Apple": ["Apple", "Appel"],
-    "Corn": ["Corn"],
-    "Mango": ["Mango", "Ye Habeshaa Mango", "Habesha Mango", "Ye Habesha Mango"],
-    "Green Beans": ["Fossolia", "Green Beans", "Grean Beans", "Green bean", "Fossolia (250g)"],
-
-    "Lettuce": ["Lettuce", "Chinese lettuce", "Iceberg Salad", "Iceberg", "Lolo rosso"],
-    "Spinach": ["spinach", "Spinach", "Swiss chard", "Kale"],
-    "Celery": ["Celery", "Parsley", "Leek", "Coriander"],
-    "Salad": ["Salad"],
-    "Broccoli": ["Broccoli", "Broccolis"],
-    "Cauliflower": ["Cauliflower"],
-
-    "Sweet Potato": ["Sweet Potatoes", "sweet potato", "Sweet Potato"],
-    "Banana": ["Banana", "Banana/ Raw "],
-    "Eggplant": ["Eggplant", "Egg plant", "eggplant"],
-    "Zucchini": ["Zucchini", "Courgette", "Courgetti"],
-    "Pumpkin": ["Pumpkin"],
-    "Squash": ["squash"],
-    "Watermelon": ["Watermelon"],
-
-    # --- DACHI PRODUCTS ---
-    "Dachi Vimto": ["dachi vimto", "Dachi Vimto"],
-    "Dachi Vinegar": ["dachi vinegar"],
-    "Dachi Ketchup": ["dachi ketchiup", "Dachi Ketchup", "Dachi Ketchup ", "Dachi Kethup"],
-    "Dawedo Pepper": ["Dawed pepper ", "Dawedo Pepper "],
-
-    # --- TEFF ---
-    "Shega Red Teff": ["Shega Red Teff"],
-    "Shega White Teff": ["Shega White Teff", "Shega Teff"],
-    "Ture Red Teff": ["Ture Red Teff"],
-    "Ture White Teff": ["Ture White Teff"],
-
-    # --- GRAINS, PULSES & FLOUR ---
-    "Ater Kik": ["Ater Kik"],
-    "Chickpea": ["Chickpea", "Shembera"],
-    "Lentils": ["lentils", "difen misir", "Difen miser (Imported)", "Sambusa Miser", "Lentils (imported)"],
-    "Aja Kinche": ["Aja kinche", "Aja Kinche"],
-    "Barley Kinche": ["Yegebes Kinche", "kinche yegebis", "Kinche Yegebs"],
-    "AL-Hinan Flour": ["AL-Hinan Flour", "AL-Hinan flour", "AL-Hinan Food Complex", "al Hilal flour"],
-    "Bethel Flour": ["bethel flour", "Bethel Flour"],
-    "Wakene Flour": ["wakene flour", "Wakene flour", "Wakene 1st Level Flour"],
-    "DK Geda Flour": ["DK GEDA FLOUR", "Dh geda flour"],
-
-    # --- OILS ---
-    "Tena Cooking Oil": ["Tena Cooking oil", "Tena cooking oil 1L", "Tena cooking oil 5L"],
-    "Aluu Sunflower Oil": ["Aluu Pure Sunflower Oil", "Aluu Sunflower Oil"],
-    "Omar Sunflower Oil": ["Omaar sunflower oil", "Omar Sunflower Oil", "omaar ghee(500g)", "Omaar Pure Vegetable Ghee"],
-    "Dania Oil": ["Dania oils", "Dania Sunflower Cooking Oil"],
-    "Inci Oil": ["inci oil", "Inci sunflower oil"],
-    "Bahja Sunflower Oil": ["Bahja Sunflower Oil"],
-    "Bizce Sunflower Oil": ["Bizce Sunflower Oil"],
-    "Hilwa Sunflower Oil": ["Hilwa Sunflower Oil"],
-
-    # --- WATER ---
-    "Victory Water": ["Victory water 1L", "Victory water 2L", "Victory Natural Water/Pack", "Victory Water ", "victory purified natural water"],
-    "Yes Water": ["Yes Water", "Yes water 0.33lt", "Yes Water 1L", "Yes water 2L", "Yes water 500ml", "Yes Water (2L)", "Yes Water (Pack)"],
+    "Girum Cinnamon Tea Bag": ["Girum Cinamon Tea Bag", "Girum Cinnamon Tea Bag ", "Girum Cinnamon Tea Bag"],
+    "Glow & Shine Bundle": ["Glow & Shine Bundle"],
     "Gold Water": ["Gold Water"],
-    "Top Bottled Water": ["Top Bottled Water"],
-
-    # --- TEA & COFFEE ---
-    "Addis Tea": ["Addis tea", "Addis Tea", "Addis Tea Bag"],
-    "Black Lion Tea": ["Black lion tea", "Black Lion (40g)", "Black Lion Tea (80g)"],
-    "Wush Wush Tea": ["wush wush tea", "Wush Wush Tea"],
-    "Simba Tea": ["Simba tea bag", "Simaba tea bag tyhme", "Simba Tea Bag", "Simba Tea Bag (Thyme)"],
-    "Girum Cinnamon Tea Bag": ["Girum Cinamon Tea Bag", "Girum Cinnamon Tea Bag "],
-    "AMG Coffee": ["AMG coffee", "Amg Coffee 50g", "AMG Coffee (Grinded)", "AMG Coffee (Roasted)", "AMG Grinded Coffee"],
-    "Mawi Coffee": ["Mawi Coffee ", "Mawi coffee "],
-    "Akkoo Coffee": ["Akkoo Coffee"],
-
-    # --- DAIRY & HONEY ---
-    "Cheese": ["Cheese", "አይብ", "Ethiopian Cheese", "Cheese 500g"],
-    "Cheese Package": ["Cheese Package", "አይብ ጥቅል"],
-    "Butter": ["Butter", "Table Butter", "Shola Table butter", "Tycoon Table Butter", "sheno lega ghee", "Sheno Lega Ghee"],
-    "Bonga Honey": ["Bonga Honey", "Bonga Mar"],
-    "Ami White Honey": ["ami white honey", "AMI White Honey"],
-    "Tesfaye Peanut Butter": ["Tesfaye Peanut Butter", "Tesfaye Peanut"],
-    "Zagol Yoghurt": ["Zagol Yoghurt", "Zagol yoghurt"],
-    "Habesha Mitin Shiro": ["Habesha Mitin Shiro", "Habsha Mitin Shiro"],
-
-    # --- CLEANING & HYGIENE ---
-    "CK Powdered Soap": ["CK laundary soap", "CK Powdered Soap", "Ck Powder Soap", "Ck powdered soap", "CK Laundry Soap", "CK Powdered Soap (40g)", "ck powderd soap 150g", "ck powderd soap 1kg", "ck powderd soap 40g", "ck powderd soap 500g", "ck powderd soap 5kg"],
-    "Cloud Bleach": ["cloud bleach 5L", "Cloud Bleach", "Cloud Bleach / 1L", "Cloud Bleach / 5L"],
-    "Sunny Bleach": ["Sunny Bleach", "Sunny Bleach / 5L", "Sunny Bleach 5 Liter", "Sunny Bleach / 800ML"],
-    "YALI Bleach": ["YALI Bleach 5lit ", "Yali Bleach 5L", "YALI Bleach 1 Lit", "YALI Bleach 350ml"],
-    "YALI Multi Purpose 2lit": ["YALI Multi Purpose 2lit ", "Yali Multi purpose 2lit", "YALI Multi Purpose 1lit"],
-    "YALI Multi Purpose 5lit": ["YALI Multi Purpose 5lit", "Yali Multi purpose 5lit"],
-    "Ajax Soap": ["ajax soap", "Ajax (Large)"],
-    "Duru Soap": ["DURU soap", "Duru Soap", "Duru Soap (180g)"],
-    "Lifebuoy Soap": ["life bouy 70g", "Life Buoy (Big)", "Life Buoy ( Big)", "Lifebuoy 70g", "Lifebuoy antibacterial bar soap", "lifebuoy(70g)"],
-    "Yeah laundry bar soap": ["YEAH Bar Soap", "Yeah laundry bar soap"],
-    "Roll Detergent powder": ["Rol Bio Laundry powder ", "Roll Detergent powder"],
-    "Happy Tissue": ["Happy soft", "happy toilet paper", "Happy Toilet Tissue", "Happy Toilet Paper"],
-    "Bravo Tissue": ["bravo table tissue", "bravo toilet paper", "Bravo Table Tissue", "Bravo Toilet Paper"],
-    "Tulip Toilet Paper": ["Tulip Toilet Paper", "Tulip soft "],
-
-    # --- MEAT & POULTRY ---
-    "Lamb": ["Lamb", "Lamp", "የበግ ስጋ", "ጠቦት የበግ ስጋ", "Regular Mutton Package", "Sheep package", "Mutton"],
-    "Goat Meat": ["Goat Meat", "የፍየል ስጋ", "Special Goat Package", "Regular Goat Package", "ሙክት የፍየል ስጋ"],
-    "Chicken Package": ["Chicken", "Chicken Groceries", "Regular Chicken Package", "Special Chicken Package", "BGS Foreign Chicken", "12 Piece Chicken", "Chicken Package", "Habesha Chicken", "Habesha Chicken Package"],
-
-    # --- PACKAGES ---
-    "Difo Package": ["Difo Package", "Difo package ", "ድፎ ጥቅል", "ዳቦ ጥቅል", "Defo Package", "Special Defo package"],
-    "Qulet Package": ["Qulet Package", "Qulet package ", "ቁሌት ጥቅል ", "ቁሌት ጥቅል", "Special qulet package"],
-    "Kukulu Package": ["Kukulu Package", "Kukulu package", "Special Kululu Package"],
-
-    # --- PASTA & NOODLES ---
-    "Indomie Vegetable Noodles": ["Indomie Vegetable Noodles ", "Indomie Vegie Noodles "],
-    "MIA Pasta": ["MIA Pasta", "Mia Pasta"],
-
-    # --- BISCUITS ---
-    "Moon Vanilla Biscuit": ["Moon Vanilla Biscuit ", "Moon vanilla biscut "],
-
-    # --- STATIONERY (Separated by Brand/Item) ---
-    "Afro EIIDE Exercise Book": ["Afro Eiide Exercise book", "Afro EIIDE Exercise Book", "EIIDE Exercise Book (12 pieces)"],
-    "Radical Exercise Book": ["Radical Exercise Book/ Pack", "radical exercise book", "Radical Exercise Book/50p"],
-    "Buna Pen": ["buna pen"],
-    "Buna Pencil": ["Buna pencil"],
-    "Pencil": ["Pencil"],
-    "Tooth Brush": ["Tooth brush"],
-
-    # --- CLOTHING (Separated by Type) ---
-    "Casual T-Shirt": ["Casual T-Shirt"],
-    "Cotton T-Shirt": ["Cotton T-Shirt", "Cotton T-shirt"],
-    "Printed T-Shirt": ["Printed T-shirt", "printing T-shirt"],
-    "T-Shirt": ["T-shirt"],
-
-    # --- BAGS ---
-    "Cross-body Bag": ["Cross-body Bag", "Crossbody Bag"],
-
-    # --- BABY PRODUCTS ---
-    "ABC Diaper": ["ABC Diaper", "ABC Daiper"],
-
-    # --- KITS (Separated by Team) ---
-    "Arsenal Kit": ["Arsenal 2024/2025 Kit"],
-    "Liverpool Kit": ["Liverpool 2024/2025 Kit"],
-    "Manchester City Kit": ["Manchester City 2024/2025 Kit"],
-    "Manchester United Kit": ["Manchester United 2024/2025 Kit"],
-
-    # --- NEW ADDITIONS (USER REQUESTED) ---
-    "Pepper": ["Red Pepper", "Yellow Pepper"],
-    # Note: User requested White Onions to be mapped under Garlic
-
-
-    # --- NEW PARENTS (SELF-MAPPED) ---
-    "Corn Kinche": ["Corn kinche"],
-    "Corn Starch": ["Corn starch"],
-    "Rice": ["Rice", "Dania rice", "Dania Basmati Rice"],
-    "Rosmery": ["Rosmery"],
-    "Taza Oats": ["Taza oats"],
-    "Cerifam Fruit": ["Cerifam fruit", "Cerifam Normal"],
-    "Cerifam Vegetable": ["Cerifam vegetable"],
-    "Bessobela": ["Bessobela (holy basil)", "Holy Basil, በሶ ብላ"],
-    "Digis Table Salt": ["Digis table salt"],
-    "Flax Seed": ["Flax seed"],
-    "Knorr": ["Knorr"],
-    "Mekelesha": ["Mekelesha", "Mekelsha"],
-    "My Kishin Mekelsha 2.5g": ["My kishin mekelsha 2.5g"],
-    "My Kishin Mekelsha 2g": ["My kishin mekelsha 2g", "My Kishen Mekelesha (2g)"],
-    "Mint": ["Mint"],
-    "Pure Salt": ["Pure salt"],
-    "Safa Tomato Paste": ["Safa tomato paste", "Safa Tomato Paste 400g", "Hilal Tomato Paste"],
-    "Salasa Tomato Paste": ["Salasa tomato paste"],
-    "Simba Tomato Paste": ["Simba tomato paste"],
-    "Sugar": ["Sugar", "Sugar (1kg)"],
-    "Take Away Box": ["Take away box"],
-    "Theday Strawberry Jam": ["Theday strawberry jam"],
-    "Egg": ["Egg"],
-    "Almi Dabo Kolo": ["Almi dabo kolo"],
-    "Almi Kolo": ["Almi kolo"],
-    "Bourbon Cream Biscuit": ["Bourbon cream biscuit"],
-    "Butter Cups Biscuit": ["Butter cups biscuit", "Butter Cups Fasting Biscuit", "Beka ButterCups Fasting Biscut"],
-    "Cinni Krunches Biscuit": ["Cinni Krunches biscuit", "Cinni Krunches Fasting Biscuit", "Beka Cinni Fasting Biscuit"],
-    "Coffee Late Cream Biscuit": ["Coffee late cream biscuit", "Coffee Latte Cream Biscuit"],
-    "Julet Biscut": ["Julet biscut"],
-    "Knick Knack Biscut": ["Knick knack biscut", "Knick Knack"],
-    "Loli Chips": ["Loli chips"],
-    "Moon Cookies": ["Moon cookies"],
-    "Moon Cookies All Flavors": ["Moon cookies all flavors"],
-    "Moon Cookies Cinnamon": ["Moon cookies cinnamon"],
-    "Moon Cookies Coffee": ["Moon cookies coffee"],
-    "Moon Cookies Vanilla": ["Moon cookies vanilla"],
-    "Moya Biscut": ["Moya Biscut", "Moya Biscuit"],
-    "Nib Bar Chocolate": ["Nib Bar chocolate"],
-    "Nib Chocolate 350 Gram": ["Nib Chocolate 350 gram"],
-    "Nib Chocolate Mini": ["Nib chocolate mini", "Nib Mini Chocolate (5pcs)"],
-    "Ok Wafers": ["Ok wafers", "Ok Cream Wafer"],
-    "Pop Corn": ["Pop corn"],
-    "Sun Chips": ["Sun chips", "Sun Chips (30g)"],
-    "Sunflower Seeds": ["Sunflower seeds", "Sunflower Seeds(Suf)", "sunflower seeds"],
-    "Yummy Crunchy": ["Yummy crunchy"],
-    "Yummy Crunchy & Rasins 500g": ["Yummy crunchy & rasins 500g", "Yummy Crunchy & Raisins"],
-    "Zion Biscut": ["Zion biscut", "Zion biscuit"],
-    "Macaroni": ["Macaroni", "Booez Macaroni", "Ok Macaroni"],
-    "Ok Macaroni 500g": ["Ok Macaroni (500g)"],
-    "Rosa Pasta": ["Rosa Pasta", "Booez Pasta", "Mawel pasta", "Alvima Pasta"],
-    "Baby Diaper": ["B&B Baby diaper no1 to 5", "B&B Baby Diaper"],
-    "Baby Wipes": ["B&b baby wipes", "ABC baby wipes", "Good Baby Wipes"],
-    "Bella Sanitary Pad": ["Bella sanitary pad", "Eve sanitary pad"],
-    "Nigist Sanitary Pad": ["Nigist sanitary pad"],
-    "Fafa Baby Food": ["Fafa baby food"],
-    "Avocado Hair Oil": ["Avo avocado hair oil"],
-    "Cloud Hand Wash": ["Cloud hand wash 5l"],
-    "Cloud Multipurpose": ["Cloud multipurpose", "Cloud Multi Purpose", "Cloud Multi Purpose/ 1L", "Cloud Multi Purpose/ 2L", "Cloud Multi Purpose/ 5L", "Cloud multi purpose 5l"],
-    "Cloud Window Cleaner": ["Cloud Window Cleaner"],
-    "Crown Detergent": ["Crown powdered detergent (30g)", "Crown Powder Detergent (30g)"],
-    "Crown Soap": ["Crown powdered soap (180g)", "Crown Laundry Soap"],
-    "Dabur Herbal Toothpaste 150g": ["Dabur herbal tooth paste 150g"],
-    "Dabur Herbal Toothpaste 30g": ["Dabur herbal tooth paste 30g"],
-    "Dabur Herbal Toothpaste 50g": ["Dabur herbal tooth paste 50g", "Dabur Herbal Tooth Paste", "Dabur Tooth Paste (50g)"],
-    "Diana Soap": ["Diana soap 80g", "Diana Orange Toilet Soap (80gm)", "Diana Toilet Soap (20gm)", "Diana Toilet Soap (25gm)"],
-    "Ipas Soap": ["Ipas soap"],
-    "Kono Soap": ["Kono soap"],
-    "Lux Soap": ["Lux 70g"],
-    "Rose Laundry Soap": ["Rose laundry soap"],
-    "Sunsilk Shampoo": ["Sunsilk shampoo 350ml"],
-    "Varika Shampoo": ["Varika shampoo"],
-    "Vaseline": ["Vasline"],
-    "Vaseline Coconut Lotion 200ml": ["Vasline cocnut lotion 200ml"],
-    "Vaseline Dry Skin 200ml": ["Vasline dry skin 200ml"],
-    "Vatika Hair Oil": ["Vatika hair oil"],
-    "Afar Salt": ["Afar Salt"],
-    "Custard Pie": ["Custard Pie"],
-    "Dish Wash": ["Dish Wash"],
-    "Kakao Powder": ["Kakao Powder"],
-    "Minced Meat": ["Minced Meat"],
-    "Quanta": ["Quanta", "ET Quanta"],
-    "Yummy Peanut Butter": ["Yummy Peanut Butter", "Yummy Crunchy Peanut Butter", "Yummy Smooth Peanut Butter"],
-    "Pumpkin": ["Pumpkin"],
-    "Squash": ["squash", "Squash"],
-    "Red Pepper": ["Red Pepper"],
-    "Yellow Pepper": ["Yellow Pepper"],
-    "Sunny Softener": ["Sunny Softener", "Sunny softener"],
-    "YALI Powder Cleaner": ["YALI Powder cleaner"],
-    "Ok Noodles": ["Ok Vegetable Noodle"],
-    "Sunny Body Jel": ["Sunny Body Jel"],
-    "Shea Butter": ["Dainty natural shea butter"],
-    "555 Soap": ["555 Laundry soap"],
-    "Sunny Shampoo": ["Sunny Shampoo"],
-    "Granola": ["Loose granola (Cereal)"],
-    "Small Bites Pack": ["Small bites pack"],
-
-    # --- ADDITIONAL MISSING PRODUCTS ---
-    "Sosi": ["Sosi"],
-    "Indomie": ["indomie (110g)"],
-
-    "Bright Detergent": ["bright detergent"],
-
-    # --- CLOTHING (Additional) ---
-    "Cardigan": ["Cardigan", " Cardigan"],
-    "Casual Sweater": ["Casual Sweater"],
-    "Hoodie": ["Hoodie"],
-    "Leggings": ["Leggings"],
-    "Football Jersey": ["Football Jersey"],
-    "Rib Stylish T-Shirt": ["Rib Stylish T-shirt"],
-    "Kids Pajama Set": ["Kids Pajama Set"],
-    "Two Piece Kids Pajama Set": ["Two Piece Kids Pajama Set"],
-    "Turtle Neck": ["Turtle Neck"],
-    "Knitted Blanket": ["Knitted blanket(Medium)"],
-
-    # --- BAGS & ACCESSORIES (Additional) ---
-    "Belt Bag": ["Belt Bag"],
-    "Canvas Bag": ["Canvas Bag"],
-    "Tote Bag": ["Tote Bag", "Tote bag"],
-    "Alem Card Holder": ["Alem Card Holder"],
-    "Wallet": ["Wallet"],
-    "Leather Hand Bags": ["Leather Hand Bags"],
-    "Kabana Toiletry Bags": ["Kabana Toiletry Bags"],
-    "Toiletry Hand Bags": ["Toiletry Hand Bags"],
-
-    # --- HAIR & BODY PRODUCTS ---
-    "Paraffin Hair Oil": ["Paraffin hair oil"],
-    "Avo Carrot Hair Oil": ["Avo carrot", "Avo carrot hair oil"],
-    "Snail Hair Oil": ["Snail hair oil"],
-    "Taflen Paraffin Hair Oil": ["Taflen Paraffin Hair Oil"],
-    "Zalash Hair Oil": ["Zalash hair oil", "Zalash hair oil"],
-    "Zenith Hair Oil": ["Zenith hair oil"],
-    "Vatika Almond Hair Oil": ["Vatika Almond Hair Oil"],
-    "Vatika Coconut Hair Oil": ["Vatika Coconut Hair Oil"],
-    "Vatika Black Seed Hair Oil": ["Vatika Hail Oil (Black Seed)"],
-    "Vatika Garlic Hair Oil": ["Vatika Hairl Oil (Garlic)"],
-    "Vatika Olive Hair Oil": ["Vatika Olive Hair Oil", "Vatika Olive Hair Oil"],
-    "Vatika Henna Shampoo": ["Vatika Henna Shampoo"],
-    "Vatika Lemon Shampoo": ["Vatika Lemon Shampoo"],
-    "Vatika Shampoo": ["Vatika Shampoo"],
-    "Dainty Natural Shea Butter": ["Dainty natural shea butter"],
-    "Dexe Black Hair Shampoo": ["Dexe Black Hair shampoo"],
-    "Organza Shampoo": ["Organza Shampoo"],
-    "Aloha Conditioner": ["Aloha conditioner"],
-    "Sunsilk Conditioner": ["Sunsilk conditioner", "Sunsilk conditioner Big"],
-    "Sunsilk Coconut Shampoo": ["Sunsilk coconut Shampoo"],
-    "Sunsilk Shampoo Big": ["Sunsilk shampoo Big"],
-    "Vaseline Coco Radiant": ["Original Vaseline Coco Radiant 200ml"],
-    "Vaseline Dry Skin Repair": ["Original Vaseline Dry Skin Repair 200ml"],
-    "Vaseline PJ Original": ["Vaseline Pj Original 45ml"],
-    "Nunu Vaseline": ["Nunu Vaseline"],
-    "Florida Glycerin": ["Florida Glycerin (50cc)", "Florida Glycerin (70cc)"],
-    "Sunny Body Jel": ["Sunny Body Jel", "Sunny Body Jel"],
-    "Sunny Shampoo": ["Sunny Shampoo", "Sunny Shampoo"],
-
-    # --- SOAPS & CLEANING ---
-    "555 Laundry Soap": ["555 Laundry soap"],
-    "555 Liquid Detergent": ["555 Liquid detergent"],
-    "Bleach": ["Bleach"],
-    "Ghion Bleach": ["Ghion bleach"],
-    "Home 220g Laundry Soap": ["Home 220g Laundry Soap", "Home 220g Laundry Soap"],
-    "Solar Laundry Soap": ["Solar Laundry soap"],
-    "Crown Laundry Soap (250g)": ["Crown Laundary Soap (250g)"],
-    "Crown Laundry Soap (150g)": ["Crown Laundry Soap (150g)"],
-    "Crown Powder Detergent (180gm)": ["Crown Powder Detergent (180gm)"],
-    "Rose Laundry Soap (250g)": ["Rose Laundry Soap (250g)"],
-    "Largo Liquid Detergent": ["Largo Liquid Detergent", "Largo Liquid Detergent"],
-    "Liquid Cloth Soap": ["Liquid Cloth Soap"],
-    "Lifebuoy Red (70g)": ["Lifebuoy Red (70g)"],
-    "Lux Soft Touch Soap Bar": ["Lux soft touch soap bar"],
-    "Ipas Anti-Bacterial Soap": ["Ipas Anti-Bacterial Soap", "Ipas antibacterial soap"],
-    "Kono Beauty Soap": ["Kono beauty soap"],
-    "Diva Bar Soap": ["Diva Bar Soap", "Diva Bar Soap"],
-    "BYMT Dish Soap": ["BYMT Dish Soap"],
-    "Tumha Dish Wash": ["Tumha Dish Wash", "Tumha Dish Wash"],
-    "Tumha Hand Wash": ["Tumha Hand Wash"],
-    "Tumha Laundry Detergent": ["Tumha Laundry Detergent", "Tumha Laundry Detergent"],
-    "Yon-X Laundry Detergent": ["Yon-X Laundry Detergent"],
-    "Yon-X Liquid Dish Wash": ["Yon-X Liquid Dish Wash"],
-    "Cloud Dish Wash": ["Cloud Dish Wash"],
-    "Cloud Dish Wash / 5L": ["Cloud Dish Wash / 5L"],
-    "Cloud Dish Wash / 750ML": ["Cloud Dish Wash / 750ML"],
-    "Cloud Toilet Cleaner": ["Cloud Toilet Cleaner"],
-    "Sunny Dish Wash": ["Sunny Dish Wash", "Sunny Dish Wash"],
-    "Sunny Hand Wash": ["Sunny Hand Wash", "Sunny Hand Wash"],
-    "Sunny Detergent / 5L": ["Sunny Detergent / 5L"],
-    "Sunny Detergent / 800ML": ["Sunny Detergent / 800ML"],
-    "Sunny Multi Purpose": ["Sunny Multi Purpose"],
-    "Sunny Oxidizer": ["Sunny Oxidizer", "Sunny Oxidizer"],
-    "Sunny Softener": ["Sunny Softener", "Sunny Softener"],
-    "Sunny Window Cleaner": ["Sunny Window Cleaner", "Sunny Window Cleaner"],
-    "YALI Dish Wash 5lit": ["YALI Dish Wash 5lit"],
-    "YALI Dish Wash 750ml": ["YALI Dish Wash 750ml"],
-    "YALI Hand Wash 500ml": ["YALI Hand Wash 500ml"],
-    "YALI Hand Wash 5lit": ["YALI Hand Wash 5lit"],
-    "YALI Laundary Detergent 5lit": ["YALI Laundary Detergent 5lit"],
-    "Yali Laundry Detergent 5lit": ["Yali Laundry detergent 5lit"],
-    "YALI Powder Cleaner": ["YALI Powder cleaner"],
-    "YALI Window Cleaner 750ml": ["YALI Window Cleaner 750ml"],
-    "Safe Soft": ["Safe Soft"],
-    "Multi Purpose": ["Multi Purpose"],
-    "Multi Purpose 1L": ["Multi purpose 1L"],
-    "Multi Purpose 2L": ["Multi purpose 2L"],
-
-    # --- FOODS, SPICES & INGREDIENTS ---
-    "2Bf Chocolate": ["2Bf Chocolate"],
-    "Choco Balls": ["Choco Balls"],
-    "Coco Crunch": ["Coco Crunch"],
-    "Fruity Rings": ["Fruity Rings"],
-    "Finger Biscuits": ["Finger Biscuits"],
-    "Juliet Biscuit": ["Juliet Biscuit"],
-    "Kalos Cookies": ["Kalos Cookies"],
-    "Cookies": ["Cookies"],
-    "Moon Coffee Biscuit": ["Moon Coffee Biscuit"],
-    "Moon Cinnamon Biscuit": ["Moon Cinnamon Biscuit"],
-    "Moon Strawberry Biscuit": ["Moon Strawberry Biscuit"],
-    "Moya Biscuit The Saint": ["Moya Biscuit The Saint"],
-    "Moya Coco Loops Biscuit": ["Moya coco loops Biscuit"],
-    "NIB Chocolate Bar": ["NIB Chocolate Bar"],
-    "NIB Chocolate Spread": ["NIB Chocolate Spread", "Nib Chocolate Spread"],
-    "NIB Dark Mini Chocolate (10 pieces)": ["NIB Dark Mini Chocolate (10 pieces)"],
-    "NIB Mini Chocolate": ["NIB Mini Chocolate", "Nub Mini Chocolate (5pcs)"],
-    "Aymi Geda Flour": ["Aymi Geda Flour"],
-    "Biya Weya Flour": ["Biya Weya Flour", "Biya Weya Flour", "Biya Weya Flour"],
-    "Kojj Flour": ["Kojj Flour"],
-    "Maleda Flour": ["Maleda Flour", "Maleda Flour"],
-    "Mawel Flour": ["Mawel Flour"],
-    "Rahmet Flour": ["Rahmet Flour"],
-    "Flour (3 Kilogram)": ["Flour (3 Kilogram)"],
-    "Arkee Basmati Rice": ["Arkee Basmati Rice"],
-    "City Bird Basmati Rice": ["City Bird Basmati Rice"],
-    "Indian Cheers Basmati Rice": ["Indian Cheers Basmati Rice"],
-    "Indian Golden Basmati Rice": ["Indian Golden Basmati Rice"],
-    "Red Rose Basmati Rice": ["Red Rose Basmati Rice"],
-    "Semira Basmti Rice": ["Semira Basmti Rice"],
-    "Loose Granola (Cereal)": ["Loose granola (Cereal)"],
-    "Taza Granola": ["Taza Granola"],
-    "Taza Quick Oats": ["Taza Quick oats"],
-    "Quaker White Oats": ["Quaker White Oats"],
-    "Teff Flakes": ["Teff Flakes"],
-    "Almi Berbere": ["Almi Berbere"],
-    "Almi Mitin Shiro": ["Almi Mitin Shiro"],
-    "Befrekot Mitin Shiro": ["Befrekot Mitin Shiro"],
-    "Befrekot Pepper": ["Befrekot Pepper"],
-    "Habsha Pepper": ["Habsha Pepper"],
-    "Hana Mitmita": ["Hana Mitmita"],
-    "Kitfo Spice": ["Kitfo Spice"],
-    "Mixed Spice": ["Mixed Spice"],
-    "Tea Spice": ["Tea Spice"],
+    "Green Beans": ["Fossolia", "Green Beans", "Green beans", "Grean Beans", "Green bean", "Fossolia (250g)"],
+    "Green Pepper": ["Green Pepper", "green pepper"],
     "Grinded Rosemary": ["Grinded Rosemary"],
-    "Rosemary": ["Rosemary", "Rosemary"],
-    "Cardamon": ["Cardamon"],
-    "Cinnamon Powder": ["Cinnamon Powder"],
-    "Turmeric": ["Turmeric"],
-    "Vanilla Flavoring Essence": ["Vanilla flavoring essence"],
-    "Baking Powder": ["Baking Powder"],
-    "Chapa Baking Powder": ["Chapa Baking Powder"],
-    "Brown Sugar (Fine)": ["Brown Sugar (Fine)"],
-    "Pure Iodized Salt": ["Pure Iodized Salt"],
-    "Consul Olive Oil": ["Consul Olive Oil", "Cousul Olive Oil"],
-    "Momin Sunflower Oil": ["Momin Sunflower Oil"],
-    "Nura Sunflower Oil": ["Nura Sunflower Oil"],
-    "Okapi Sunflower Oil": ["Okapi Sunflower Oil"],
-    "Orkide Sunflower Oil": ["Orkide sunflower oil"],
-    "Sunvito Sunflower Oil": ["Sunvito Sunflower Oil"],
-    "Zehabu Sunflower Oil": ["Zehabu Sunflower Oil"],
-    "Mayra Sunflower Oil": ["Mayra sunflower oil"],
-    "Omaar Light Meat Tuna (Large)": ["Omaar light meat tuna(large)"],
-    "Almadina Saad Dates": ["Almadina Saad Dates", "Saad Dates"],
-    "Applack Baby Formula 1": ["Applack Baby Formula 1"],
-    "Armella Mixed Fruit Jam": ["Armella Mixed Fruit Jam"],
-    "Dachi Strawberry Jam (450g)": ["Dachi Strawberry Jam (450g)"],
-    "Fargello Mango Juice": ["Fargello Mango Juice"],
-    "Hamda Powdered Milk": ["Hamda Powdered Milk"],
-    "Nido 400gram Milk Powder": ["Nido 400gram Milk Powder"],
-    "Zagol Cheese": ["Zagol Cheese"],
-    "Zagol Milk": ["Zagol Milk", "Zagol Milk"],
-    "Zagol Table Butter": ["Zagol Table Butter"],
-    "Oche Fasting Butter": ["Oche Fasting Butter"],
-    "Butter Spice": ["Butter Spice"],
-    "Fish Fillet": ["Fish Fillet"],
-    "Foreign’s Egg": ["Foreign’s egg"],
     "Groceries": ["Groceries"],
-    "Gursha Bars": ["Gursha bars"],
-    "Individual Bars": ["Individual bars"],
-    "Kuri Lactation Tea": ["Kuri Lactation Tea"],
-    "Mama's Choice": ["Mama's choice"],
-    "Mama's Choice with Fruits": ["Mama's choice with fruits"],
-    "Sosi Soya": ["Sosi Soya"],
-    "Tasty Soya": ["Tasty Soya"],
-    "Torti Chips": ["Torti Chips", "Torti Chips (30g)"],
-    "Raw Pop Corn": ["Raw Pop Corn", "Raw Popcorn 500g"],
-    "Wild Coffee": ["Wild Coffee"],
-    "Jimma Coffee": ["Jimma Coffee"],
-    "Fenet Grinded Coffee": ["Fenet Grinded Coffee"],
-    "Coffee (Wollega)": ["Coffee(Wollega)"],
-    "Chito Coffee": ["Chito Coffee", "Chito Coffee"],
-
-    # --- PACKAGES & BUNDLES ---
-    "All in One Package": ["All in One Package"],
-    "Asibeza Tikil Bundle": ["Asibeza tikil bundle"],
-    "Delicious Package": ["Delicious Package"],
-    "Easter Package": ["Easter Package"],
-    "Fruit Package Bundle": ["Fruit package  bundle"],
+    "Guava": ["Guava"],
+    "Gursha Bars": ["Gursha Bars", "Gursha bars"],
+    "Habesha Cabbage": ["Habesha Cabbage", "Habesha cabbage", "Gurage cabbage"],
+    "Habesha Mitin Shiro": ["Habesha Mitin Shiro", "Habsha Mitin Shiro"],
+    "Habsha Pepper": ["Habsha Pepper"],
+    "Hamda Powdered Milk": ["Hamda Powdered Milk"],
+    "Hand Wash": ["Hand Wash", "hand wash"],
+    "Hana Mitmita": ["Hana Mitmita"],
+    "Happy Toilet Tissue": ["Happy soft", "happy toilet paper", "Happy Toilet Tissue", "Happy Toilet Paper"],
     "Hassle Free Package": ["Hassle Free Package"],
+    "Hilal Tomato Paste": ["Hilal Tomato Paste"],
+    "Hilwa Sunflower Oil": ["Hilwa Sunflower Oil"],
     "Holiday Package": ["Holiday Package"],
+    "Holy Basil": ["Holy Basil", "Bessobela (holy basil)", "Bessobela", "Holy Basil, በሶ ብላ"],
+    "Home 220g Laundry Soap": ["Home 220g Laundry Soap"],
     "Home Ready Package": ["Home Ready Package"],
+    "Hoodie": ["Hoodie"],
+    "Inci Sunflower Oil": ["Inci Sunflower Oil", "inci oil", "Inci sunflower oil"],
+    "Indian Cheers Basmati Rice": ["Indian Cheers Basmati Rice"],
+    "Indian Chilly": ["Indian Chilly", "Indian chilly", "Indian chilli", "indian chilly", "Indian chilly "],
+    "Indian Golden Basmati Rice": ["Indian Golden Basmati Rice"],
+    "Individual Bars": ["Individual Bars", "Individual bars"],
+    "Indomie": ["Indomie", "indomie (110g)"],
+    "Indomie Noodles (Large)": ["Indomie Noodles (Large)"],
+    "Indomie Vegetable Noodles": ["Indomie Vegetable Noodles", "Indomie Vegetable Noodles ", "Indomie Vegie Noodles "],
+    "Ipas Anti-Bacterial Soap": ["Ipas Anti-Bacterial Soap", "Ipas antibacterial soap"],
+    "Ipas Soap": ["Ipas Soap", "Ipas soap", "ipas soap"],
+    "Ipen": ["Ipen"],
+    "Jam Comedy Night": ["Jam Comedy Night"],
+    "Jimma Coffee": ["Jimma Coffee"],
+    "Juliet Biscuit": ["Juliet Biscuit"],
+    "Julet Biscut": ["Julet Biscut", "Julet biscut"],
+    "Kabana Toiletry Bags": ["Kabana Toiletry Bags"],
+    "Kakao Powder": ["Kakao Powder"],
+    "Kalos Cookies": ["Kalos Cookies"],
+    "Kids Pajama Set": ["Kids Pajama Set"],
     "Kitfo Holiday Package": ["Kitfo Holiday Package"],
     "Kitfo Package": ["Kitfo Package"],
+    "Kitfo Spice": ["Kitfo Spice"],
+    "Knick Knack Biscut": ["Knick Knack Biscut", "Knick knack biscut", "Knick Knack"],
+    "Knitted Blanket": ["Knitted Blanket", "Knitted blanket(Medium)"],
+    "Knorr": ["Knorr"],
+    "Knorr 5 Piece": ["Knorr 5 Piece", "Knorr /5piece"],
+    "Kojj Flour": ["Kojj Flour"],
+    "Kojj Pastina": ["Kojj Pastina"],
+    "Kono Beauty Soap": ["Kono Beauty Soap", "Kono beauty soap"],
+    "Kono Soap": ["Kono Soap", "Kono soap", "kono soap"],
+    "Kukulu Package": ["Kukulu Package", " Kukulu Package", "Kukulu package", "Special Kululu Package"],
+    "Kuri Lactation Tea": ["Kuri Lactation Tea"],
+    "Kushnaye Tikil": ["Kushnaye Tikil", "ኩሽናዬ ጥቅል"],
+    "Largo Liquid Detergent": ["Largo Liquid Detergent"],
+    "Leather Hand Bags": ["Leather Hand Bags"],
+    "Leggings": ["Leggings"],
+    "Lemon": ["Lemon", "lemon", "Lomen", "Lemon 250g", "Lime"],
+    "Difen Misir": ["Difen Misir", "difen misir", "difen miser", "Difen miser (Imported)", "Sambusa Miser"],
+    "Lentils (imported)": ["lentils", "whole lentils", "Lentils (imported)", "Lentils"],
+    "Lettuce": ["Lettuce", "Chinese lettuce", "Iceberg Salad", "iceberg salad", "Iceberg", "Lolo rosso"],
+    "Lifebuoy Soap": ["Lifebuoy Soap", "Lifebuoy Red (70g)", "life bouy 70g", "Life Buoy (Big)", "Life Buoy ( Big)", "Lifebuoy 70g", "Lifebuoy antibacterial bar soap", "lifebuoy(70g)"],
+    "Liquid Cloth Soap": ["Liquid Cloth Soap", "Liquid soap 5l"],
+    "Football Club Kit": ["Football Club Kit", "Liverpool 2024/2025 Kit", "Manchester City 2024/2025 Kit", "Manchester United 2024/2025 Kit", "Arsenal 2024/2025 Kit"],
+    "Loli Chips": ["Loli chips", "loli chips", "Loli Chips", "Loli Chips ", "Loli Chips Ketchup Flavor", "Loli chips (Paprika)"],
+    "Loose Granola (Cereal)": ["Loose Granola (Cereal)", "Loose granola (Cereal)"],
+    "Lux Soap": ["Lux Soap", "Lux 70g", "lux 70g"],
+    "Lux Soft Touch Soap Bar": ["Lux Soft Touch Soap Bar", "Lux soft touch soap bar"],
+    "Ma'ed Bundle": ["Ma'ed Bundle"],
+    "Macaroni": ["Macaroni", "macaroni", "Booez Macaroni", "Ok Macaroni"],
+    "Maleda Flour": ["Maleda Flour"],
+    "Mama's Choice": ["Mama's Choice", "Mama's choice", "Mama's choice with fruits"],
+    "Mango": ["Mango", "Ye Habeshaa Mango", "Habesha Mango", "Ye Habesha Mango"],
+    "Mango Apple": ["Mango Apple", "Apple Mango"],
+    "Mawel Flour": ["Mawel Flour"],
+    "Mawi Coffee": ["Mawi Coffee ", "Mawi coffee ", "Mawi Coffee", "Mawi coffee"],
+    "Mayra Sunflower Oil": ["Mayra Sunflower Oil", "Mayra sunflower oil"],
+    "Mekelesha": ["Mekelesha", "Mekelsha", "My kishin mekelsha 2.5g", "My kishin mekelsha 2g", "My Kishen Mekelesha (2g)", "My Kishin / 3 Pieces", "My kishin / 5 Pieces"],
+    "MIA Pasta": ["MIA Pasta", "Mia Pasta", "mia pasta", "Mia pasta "],
+    "Minced Meat": ["Minced Meat"],
+    "Mint": ["Mint", "mint"],
     "Mix Package": ["Mix Package"],
-    "Mix Package Bundle": ["Mix package bundle"],
-    "Special Mix Package": ["Special Mix package"],
-    "Special Mutton Package": ["Special Mutton Package"],
-    "Vegetable Package Bundle": ["Vegetable package  bundle"],
-    "Yummy Package": ["Yummy Package"],
-    "Kushnaye Tikil": ["ኩሽናዬ ጥቅል"],
-    "Gebeya Lemne Tikil": ["ገበያ ለምኔ ጥቅል"],
-
-    # --- ELECTRONICS & MISC ---
-    "T-500 Smartwatch": ["T-500 Smartwatch"],
-    "ChipChip Umbrella": ["ChipChip Umbrella"],
-    "Elf Primer": ["Elf Primer"],
-    "Five Star Safety Matches": ["Five Star Safety Matches"],
-    "Ipen": ["Ipen"],
-    "Azzy Multi Functional": ["Azzy multi functional"],
-    "Jam Comedy Night": ["Jam Comedy Night"],
-
-    # --- REMAINING MISSING ITEMS ---
-    "My Kishin 3 Pieces": ["My Kishin / 3 Pieces"],
-    "My Kishin 5 Pieces": ["My kishin / 5 Pieces"],
-    "Ox Kircha For 10": ["Ox Kircha - for 10"],
-    "Ox Kircha For 6": ["Ox Kircha - for 6"],
+    "Mix Package Bundle": ["Mix Package Bundle", "Mix package bundle"],
+    "Mixed Spice": ["Mixed Spice"],
+    "Momin Sunflower Oil": ["Momin Sunflower Oil"],
+    "Moon Cinnamon Biscuit": ["Moon Cinnamon Biscuit"],
+    "Moon Coffee Biscuit": ["Moon Coffee Biscuit"],
+    "Moon Cookies": ["Moon cookies", "moon cookies", "Moon Cookies", "Moon cookies all flavors", "Moon Cookies All Flavors", "Moon cookies cinnamon", "moon cookies cinnamon", "Moon cookies coffee", "moon cookies coffee", "Moon cookies vanilla", "moon cookies vanilla", "Moon Cookies Vanilla"],
+    "Moon Strawberry Biscuit": ["Moon Strawberry Biscuit"],
+    "Moon Vanilla Biscuit": ["Moon Vanilla Biscuit ", "Moon Vanilla Biscuit", "Moon vanilla biscut ", "Moon vanilla biscut"],
+    "Moya Biscut": ["Moya Biscut", "Moya Biscuit"],
+    "Moya Biscuit The Saint": ["Moya Biscuit The Saint"],
+    "Moya Coco Loops Biscuit": ["Moya Coco Loops Biscuit", "Moya coco loops Biscuit"],
+    "Multi Purpose": ["Multi Purpose", "Multi purpose 1L", "Multi purpose 2L"],
+    "Nib Chocolate": ["Nib Chocolate", "Nib Bar chocolate", "Nib Chocolate 350 gram", "NIB Chocolate Bar", "NIB Chocolate Spread", "Nib Chocolate Spread", "NIB Dark Mini Chocolate (10 pieces)", "NIB Mini Chocolate", "Nub Mini Chocolate (5pcs)", "Nib chocolate mini", "Nib Mini Chocolate (5pcs)"],
+    "Nido 400gram Milk Powder": ["Nido 400gram Milk Powder"],
+    "Nigist Sanitary Pad": ["Nigist sanitary pad", "nigist sanitary pad", "Nigist Sanitary Pad"],
+    "Nunu Vaseline": ["Nunu Vaseline"],
+    "Nura Sunflower Oil": ["Nura Sunflower Oil"],
+    "Oche Fasting Butter": ["Oche Fasting Butter"],
+    "Ok Macaroni 500g": ["Ok Macaroni (500g)", "Ok Macaroni 500g"],
+    "Ok Noodles": ["Ok Noodles", "Ok Vegetable Noodle"],
+    "Ok Pasta": ["Ok Pasta"],
+    "Ok Vegetable Noodle": ["Ok Vegetable Noodle", "Indomie Vegetable Noodles ", "Indomie Vegetable Noodles", "Indomie Vegie Noodles ", "Indomie Vegie Noodles"],
+    "Ok wafers": ["Ok wafers", "Ok Cream Wafer"],
+    "Okapi Sunflower Oil": ["Okapi Sunflower Oil"],
+    "Omar Sunflower Oil": ["Omaar sunflower oil", "Omar Sunflower Oil"],
+    "Omaar Light Meat Tuna (Large)": ["Omaar Light Meat Tuna (Large)", "Omaar light meat tuna(large)"],
+    "Omaar Pure Vegetable Ghee": ["omaar ghee(500g)", "Omaar Pure Vegetable Ghee"],
+    "Orange Pineapple": ["Orange Pineapple", "Orange Pineapple "],
+    "Orange Valencia": ["Orange", "Valencia Orange", "orange Valencia", "Orange Valencia", "Valencia Orange"],
+    "Orange Yerer": ["Orange Yerer", "Yerer Orange", "Orange Yarer ", "Orange Yarer"],
+    "Organza Shampoo": ["Organza Shampoo"],
+    "Orkide Sunflower Oil": ["Orkide Sunflower Oil", "Orkide sunflower oil"],
+    "Ox Kircha For 10": ["Ox Kircha For 10", "Ox Kircha - for 10"],
+    "Ox Kircha For 6": ["Ox Kircha For 6", "Ox Kircha - for 6"],
+    "Papaya": ["Papaya"],
+    "Papaya B": ["Papaya B"],
+    "Papaya Oversize": ["Papaya Oversize"],
+    "Paraffin Hair Oil": ["Paraffin Hair Oil", "Paraffin hair oil", " Paraffin hair oil ", " Paraffin hair oil"],
+    "Pasta": ["Pasta", "pasta"],
     "Pea": ["Pea"],
+    "Pencil": ["Pencil"],
+    "Pepper": ["Pepper", "Red Pepper", "Yellow Pepper"],
+    "Pineapple": ["Pineapple", "pineapple"],
+    "Pineapple B": ["Pineapple B"],
+    "Pop Corn": ["Pop Corn", "Pop corn"],
+    "Potato": ["Potato", "Potatoes", "Potatoes Restaurant quality", "Potatoes Restaurant Quality", "Potato B"],
+    "Potato Chips": ["Potato for Chips", "Potato Chips", "Potatoes Chips"],
+    "Potato Grade C": ["Potato Grade C", "Potato C"],
     "Power Tissue": ["Power Tissue"],
     "Prima Macaroni": ["Prima Macaroni"],
     "Prima Pasta": ["Prima Pasta"],
+    "Printed T-Shirt": ["Printed T-Shirt", "Printed T-shirt", "printing T-shirt"],
+    "Pumpkin": ["Pumpkin"],
+    "Pure Iodized Salt": ["Pure Iodized Salt"],
+    "Pure Salt": ["Pure salt", "Pure Salt ", "Pure Salt"],
+    "Quaker White Oats": ["Quaker White Oats"],
+    "Quanta": ["Quanta", "ET Quanta"],
+    "Qulet Package": ["Qulet Package", "Qulet package ", "Qulet package", "ቁሌት ጥቅል ", "ቁሌት ጥቅል", "Special qulet package"],
+    "Radical Exercise Book": ["Radical Exercise Book", "Radical Exercise Book/ Pack", "radical exercise book", "Radical Exercise Book/50p"],
+    "Rahmet Flour": ["Rahmet Flour"],
+    "Raw Pop Corn": ["Raw Pop Corn", "Raw Popcorn 500g"],
+    "Red Onion (ሃበሻ)": ["Red Onion (ሃበሻ)", "Red onion ( ሃበሻ )", "Red onion ( ሃበሻ ) ", "Red Onion habesha"],
+    "Red Onion A": ["Red Onion A", "Redonion A ", "Redonion A", "Red Onion Grade A", "Red Onion Grade A Restaurant q", "Red Onion Grade A Restaurant quality", "Red Onion", "Red Onion Qelafo"],
+    "Red Onion B": ["Red Onion B", "Red Onion Grade B", "Redonion B"],
+    "Red Onion C": ["Red Onion C", "Red Onion Grade C", "Redonion C" ,"Pilled Red onion"],
+    "Red Onion D": ["Red Onion D"],
+    "Red Onion Elfora": ["Red Onion Elfora", "Redonion Elfora", "Red onion elfora", "Red onion elfora "],
+    "Red Rose Basmati Rice": ["Red Rose Basmati Rice"],
+    "Regular Goat Package": ["Goat Meat", "የፍየል ስጋ", "Special Goat Package", "Regular Goat Package", "ሙክት የፍየል ስጋ"],
+    "Rib Stylish T-Shirt": ["Rib Stylish T-Shirt", "Rib Stylish T-shirt"],
+    "Rice": ["Rice", "rice"],
+    "Roll Detergent powder": ["Rol Bio Laundry powder ", "Rol Bio Laundry powder", "Roll Detergent powder"],
+    "Rosa Pasta": ["Rosa Pasta", "Booez Pasta", "Mawel pasta", "Alvima Pasta"],
+    "Rose Laundry Soap": ["Rose Laundry Soap", "Rose laundry soap"],
+    "Rose Laundry Soap (250g)": ["Rose Laundry Soap (250g)"],
+    "Rosemary": ["Rosemary"],
+    "Rosmery": ["Rosmery"],
     "Safa Ketchup": ["Safa Ketchup"],
+    "Safa tomato paste": ["Safa tomato paste", "safa tomato paste", "Safa Tomato Paste", "Safa Tomato Paste 400g"],
+    "Safe Soft": ["Safe Soft"],
+    "Salsa Tomato Paste": ["Salsa Tomato Paste", "Salsa Tomato Paste (400g)", "salasa tomato paste ", "salasa tomato paste"],
+    "Salad": ["Salad"],
+    "Semira Basmti Rice": ["Semira Basmti Rice"],
+    "Sheep package": ["Lamb", "Lamp", "የበግ ስጋ", "ጠቦት የበግ ስጋ", "Regular Mutton Package", "Sheep package", " Mutton", "Mutton"],
+    "Shega Red Teff": ["Shega Red Teff"],
+    "Shega White Teff": ["Shega White Teff", "Shega Teff", "Shega White Teff\\t"],
+    "Sheno Lega Ghee": ["Butter", "Table Butter", "Shola Table butter", "Tycoon Table Butter", "sheno lega ghee", "Sheno Lega Ghee"],
     "Signal Toothpaste (Medium)": ["Signal Toothpaste (Medium)"],
+    "Simba Tea Bag (Thyme)": ["Simba Tea Bag (Thyme)", "Simaba tea bag tyhme", "Simaba tea bag tyhme ", "simba tea bag(thyme)"],
+    "Simba Tea bag": ["Simba Tea bag", "Simba tea bag", "Simba Tea Bag", "Simba tea bag(thyme)"],
+    "Simba Tomato Paste": ["Simba Tomato Paste", "Simba tomato paste "],
+    "Small Bites Pack": ["Small Bites Pack", "Small bites pack"],
+    "Small Red Onion": ["Small Red Onion"],
+    "Small Size Beetroot": ["Small Size Beetroot", "Small & Big Size Beetroot"],
+    "Small Size Carrot": ["Small Size Carrot", "Small Carrot", "Small size Carrot"],
+    "Small Size Potato": ["Small size Potato", "Small Size Potato ", "Small Size Potato"],
+    "Snail Hair Oil": ["Snail Hair Oil", "Snail hair oil"],
+    "Solar Laundry Soap": ["Solar Laundry Soap", "Solar Laundry soap"],
+    "Sosi": ["Sosi"],
+    "Sosi Soya": ["Sosi Soya"],
+    "Special Mix Package": ["Special Mix Package", "Special Mix package"],
+    "Special Mutton Package": ["Special Mutton Package"],
+    "Spinach": ["spinach", "Spinach", "Swiss chard", "Swiss Chard", "Kale"],
+    "Squash": ["squash", "Squash"],
+    "Strawberry": ["Strawberry"],
+    "Sugar": ["Sugar", "Sugar (1kg)"],
+    "Sun Chips": ["Sun Chips", "Sun chips", "sun chips", "Sun Chips (30g)"],
+    "Sunflower Seeds": ["Sunflower Seeds", "Sunflower seeds", "Sunflower Seeds(Suf)", "sunflower seeds"],
+    "Sunny Bleach": ["Sunny Bleach", "Sunny Bleach / 5L", "Sunny Bleach 5 Liter", "Sunny Bleach / 800ML"],
+    "Sunny Body Jel": ["Sunny Body Jel"],
+    "Sunny Detergent": ["Sunny Detergent", "Sunny Detergent / 5L", "Sunny Detergent / 800ML"],
+    "Sunny Dish Wash": ["Sunny Dish Wash"],
+    "Sunny Hand Wash": ["Sunny Hand Wash"],
+    "Sunny Multi Purpose": ["Sunny Multi Purpose"],
+    "Sunny Oxidizer": ["Sunny Oxidizer", "Sunny Oxidizer"],
+    "Sunny Shampoo": ["Sunny Shampoo"],
+    "Sunny Softener": ["Sunny Softener", "Sunny softener"],
+    "Sunny Window Cleaner": ["Sunny Window Cleaner", "Sunny Window Cleaner"],
+    "Sunsilk Coconut Shampoo": ["Sunsilk Coconut Shampoo", "Sunsilk coconut Shampoo"],
+    "Sunsilk Conditioner": ["Sunsilk Conditioner", "Sunsilk conditioner", "Sunsilk conditioner Big"],
+    "Sunsilk Shampoo": ["Sunsilk shampoo 350ml", "sunsilk shampoo 350ml", "Sunsilk Shampoo 350ml", "Sunsilk shampoo Big", "Sunsilk Shampoo"],
+    "Sunvito Sunflower Oil": ["Sunvito Sunflower Oil"],
+    "Sweet Potato": ["Sweet Potatoes", "sweet potato", "Sweet potato", "Sweet Potato"],
+    "T-500 Smartwatch": ["T-500 Smartwatch"],
+    "T-Shirt": ["T-Shirt", "T-shirt"],
+    "Taflen Paraffin Hair Oil": ["Taflen Paraffin Hair Oil"],
+    "Take Away Box": ["Take Away Box", "Take away box"],
+    "Tasty Soya": ["Tasty Soya"],
+    "Taza Granola": ["Taza Granola"],
+    "Taza Oats": ["Taza Oats", "Taza oats"],
+    "Taza Quick Oats": ["Taza Quick Oats", "Taza Quick oats"],
+    "Tea Spice": ["Tea Spice"],
+    "Tea Time Bundle": ["Tea Time Bundle"],
+    "Teff Flakes": ["Teff Flakes"],
+    "Tena Cooking Oil": ["Tena Cooking Oil", "Tena Cooking oil", "Tena cooking oil 1L", "Tena cooking oil 5L"],
+    "Tesfaye Peanut Butter": ["Tesfaye Peanut Butter", "Tesfaye Peanut"],
+    "Theday Strawberry Jam": ["Theday strawberry jam", "theday strawberry jam", "Theday Strawberry Jam"],
+    "Toiletry Hand Bags": ["Toiletry Hand Bags"],
+    "Tomato A": ["Tomato A", "Tomatoes Grade A", "Tomato", "Tomato Restaurant Quality ", "Tomato Restaurant Quality", "Tomatoes A", "Tomato Grade A"],
+    "Tomato B": ["Tomato B", "Tomatoes B", "Tomatoes Grade B"],
+    "Tomato Ripe": ["Tomato/ Ripe/ Small size /", "Tomato Ripe"],
+    "Tomato Roma": ["Tomato Roma", "Tomato Beef"],
+    "Tooth Brush": ["Tooth brush", "Tooth Brush ", "Tooth Brush"],
+    "Top Bottled Water": ["Top Bottled Water"],
+    "Torti Chips": ["Torti Chips", "Torti Chips (30g)"],
+    "Tote Bag": ["Tote Bag", "Tote bag"],
+    "Tulip Toilet Paper": ["Tulip Toilet Paper", "Tulip soft ", "Tulip soft"],
+    "Tumha Dish Wash": ["Tumha Dish Wash", "Tumha Dish Wash"],
+    "Tumha Hand Wash": ["Tumha Hand Wash"],
+    "Tumha Laundry Detergent": ["Tumha Laundry Detergent"],
+    "Ture Red Teff": ["Ture Red Teff"],
+    "Ture White Teff": ["Ture White Teff"],
+    "Turmeric": ["Turmeric"],
+    "Turtle Neck": ["Turtle Neck"],
     "Twins Facial Tissue": ["Twins Facial Tissue"],
     "Twins Paper Towel": ["Twins Paper Towel"],
     "Twins Table Napkin": ["Twins Table Napkin"],
     "Twins Toilet Tissue": ["Twins Toilet Tissue"],
+    "Two Piece Kids Pajama Set": ["Two Piece Kids Pajama Set"],
+    "Vanilla Flavoring Essence": ["Vanilla Flavoring Essence", "Vanilla flavoring essence"],
+    "Varika Shampoo": ["Varika Shampoo", "Varika shampoo"],
+    "Vaseline": ["Vaseline", "Vasline"],
+    "Vaseline Coco Radiant": ["Vaseline Coco Radiant", "Original Vaseline Coco Radiant 200ml"],
+    "Vaseline Coconut Lotion 200ml": ["Vaseline Coconut Lotion 200ml", "Vasline cocnut lotion 200ml"],
+    "Vaseline Dry Skin 200ml": ["Vaseline Dry Skin 200ml", "Vasline dry skin 200ml"],
+    "Vaseline Dry Skin Repair": ["Vaseline Dry Skin Repair", "Original Vaseline Dry Skin Repair 200ml"],
+    "Vaseline PJ Original": ["Vaseline PJ Original", "Vaseline Pj Original 45ml"],
+    "Vatika Almond Hair Oil": ["Vatika Almond Hair Oil"],
+    "Vatika Black Seed Hair Oil": ["Vatika Black Seed Hair Oil", "Vatika Hail Oil (Black Seed)"],
+    "Vatika Coconut Hair Oil": ["Vatika Coconut Hair Oil"],
+    "Vatika Garlic Hair Oil": ["Vatika Garlic Hair Oil", "Vatika Hairl Oil (Garlic)"],
+    "Vatika Hair Oil": ["Vatika Hair Oil", "Vatika hair oil"],
+    "Vatika Henna Shampoo": ["Vatika Henna Shampoo"],
+    "Vatika Lemon Shampoo": ["Vatika Lemon Shampoo"],
+    "Vatika Olive Hair Oil": ["Vatika Olive Hair Oil"],
+    "Vatika Shampoo": ["Vatika Shampoo"],
+    "Vegetable Package Bundle": ["Vegetable Package Bundle", "Vegetable package  bundle"],
+    "Victory Water": ["Victory water 1L", "Victory water 2L", "Victory Natural Water/Pack", "Victory Water ", "Victory Water", "victory purified natural water"],
     "Viva Toilet Paper Tissue": ["Viva Toilet Paper Tissue"],
-    "Knorr 5 Piece": ["Knorr /5piece"],
-    "Kojj Pastina": ["Kojj Pastina"],
-    "Elbow Macaroni": ["Elbow Macaroni", "Elbow Macaroni (Small)"],
-    "Indomie Noodles (Large)": ["Indomie Noodles (Large)"],
-    "Ok Pasta": ["Ok Pasta"],
-    "Ok Vegetable Noodle": ["Ok Vegetable Noodle"],
-    "Loli Chips Ketchup Flavor": ["Loli Chips Ketchup Flavor"],
-    "Loli Chips Paprika": ["Loli chips (Paprika)"],
-    "Snail Hair Oil": ["Snail hair oil"],
-    "Zenith Hair Oil": ["Zenith hair oil"],
-    "Elsa Kolo": ["Elsa Kolo"],
-    "System Metadata": ["Product name", "Item name"]
-
+    "Wakene 1st Level Flour": ["wakene flour", "Wakene flour", "Wakene 1st Level Flour"],
+    "Wallet": ["Wallet"],
+    "Watermelon": ["Watermelon"],
+    "White Cabbage": ["White Cabbage", "White Cabbage (Large)", "White Cabbage (large)", "Habesha cabbage", "White Cabbage (Small)", "White Cabbage (small)", "White Cabbage (medium)", "whitecabbage", "White cabbage", "Cabbage"],
+    "White Onion": ["White Onion A", "White Onion B", "White Onion C", "White Onion"],
+   
+    "White Cabbage B": ["White Cabbage B"],
+    "Window Cleaner": ["Window Cleaner", "window cleaner"],
+    "Wild Coffee": ["Wild Coffee"],
+    "Wush Wush Tea": ["wush wush tea", "Wush Wush Tea"],
+    "YALI Bleach": ["YALI Bleach", "YALI Bleach 5lit ", "YALI Bleach 5lit", "Yali Bleach 5L", "YALI Bleach 1 Lit", "YALI Bleach 350ml"],
+    "YALI Dish Wash": ["YALI Dish Wash", "YALI Dish Wash 5lit", "YALI Dish Wash 750ml"],
+    "YALI Hand Wash": ["YALI Hand Wash", "YALI Hand Wash 500ml", "YALI Hand Wash 5lit"],
+    "Yali Laundry Detergent": ["Yali Laundry Detergent", "YALI Laundary Detergent 5lit", "Yali Laundry detergent 5lit"],
+    "YALI Multi Purpose": ["YALI Multi Purpose", "YALI Multi Purpose 2lit ", "YALI Multi Purpose 2lit", "Yali Multi purpose 2lit", "YALI Multi Purpose 1lit", "YALI Multi Purpose 5lit", "Yali Multi purpose 5lit"],
+    "YALI Powder Cleaner": ["YALI Powder Cleaner", "YALI Powder cleaner"],
+    "YALI Window Cleaner": ["YALI Window Cleaner", "YALI Window Cleaner 750ml"],
+    "Yeah laundry bar soap": ["YEAH Bar Soap", "Yeah Bar Soap", "Yeah laundry bar soap"],
+    "Yellow Pea": ["Yellow Pea", "yellow pea", "yellow peas"],
+    "Yes Water": ["Yes Water", "Yes water 0.33lt", "Yes Water 1L", "Yes water 2L", "Yes water 500ml", "Yes Water (2L)", "Yes Water (Pack)", "Yes Water 0.33ml (Pack)"],
+    "Yon-X Laundry Detergent": ["Yon-X Laundry Detergent"],
+    "Yon-X Liquid Dish Wash": ["Yon-X Liquid Dish Wash"],
+    "Yummy Crunchy": ["Yummy Crunchy", "Yummy crunchy"],
+    "Yummy Crunchy & Rasins 500g": ["Yummy Crunchy & Rasins 500g", "Yummy crunchy & rasins 500g", "Yummy Crunchy & Raisins"],
+    "Yummy Package": ["Yummy Package"],
+    "Yummy Peanut Butter": ["Yummy Peanut Butter", "Yummy Crunchy Peanut Butter", "Yummy Smooth Peanut Butter"],
+    "Zagol Cheese": ["Zagol Cheese"],
+    "Zagol Milk": ["Zagol Milk", "Zagol Milk"],
+    "Zagol Table Butter": ["Zagol Table Butter"],
+    "Zagol Yoghurt": ["Zagol Yoghurt", "Zagol yoghurt"],
+    "Zalash Hair Oil": ["Zalash Hair Oil", "Zalash hair oil"],
+    "Zehabu Sunflower Oil": ["Zehabu Sunflower Oil"],
+    "Zenith Hair Oil": ["Zenith Hair Oil", "Zenith hair oil"],
+    "Zion Biscut": ["Zion Biscut", "Zion biscut", "Zion biscuit"],
+    "Zucchini": ["Zucchini", "Courgette", "Courgette ","Courgetti"],
 }
 
-
-# ==============================================================================
-#  DYNAMIC MAPPING LOADING
-# ==============================================================================
-
-def load_mapping_rules_from_db():
-    """
-    Attempts to load mapping rules from the `product_mapping_rules` table.
-    Returns a tuple (parent_child_mapping, child_to_parent_map).
-    If loading fails, returns (None, None).
-    """
-    try:
-        engine = get_db_engine('hub')
-        
-        # Check if table exists first to avoid error spam if migration hasn't run
-        with engine.connect() as conn:
-            from sqlalchemy import text
-            result = conn.execute(text("""
-                SELECT EXISTS (
-                    SELECT 1 
-                    FROM information_schema.tables 
-                    WHERE table_name = 'hub_mapping_rules'
-                )
-            """))
-            if not result.scalar():
-                print("⚠️  Table 'hub_mapping_rules' not found. Using static dictionary.")
-                return None, None
-
-            # Fetch active rules. Use LEFT JOIN so rules don't disappear if master table is in flux
-            query = text("""
-                SELECT r.input_pattern, COALESCE(p.parent_product_name, r.input_pattern) as parent_name
-                FROM hub_mapping_rules r
-                LEFT JOIN hub_standard_products p ON r.parent_product_id = p.parent_product_id
-                WHERE r.is_active = TRUE
-                ORDER BY r.priority DESC
-            """)
-            rules = conn.execute(query).fetchall()
-            
-            if not rules:
-                print("⚠️  No active rules found in database. Using static dictionary.")
-                return None, None
-
-            # Build dictionaries
-            db_parent_child = {}
-            db_child_parent = {}
-            
-            for pattern, parent_name in rules:
-                clean_pattern = re.sub(r'\s+', ' ', str(pattern)).strip().lower()
-                
-                # Update Child -> Parent Map (Last one wins if duplicates exists, but we ordered by priority)
-                if clean_pattern not in db_child_parent:
-                     db_child_parent[clean_pattern] = parent_name
-                
-                # Update Parent -> Child List
-                if parent_name not in db_parent_child:
-                    db_parent_child[parent_name] = []
-                db_parent_child[parent_name].append(pattern)
-
-            print(f"✅ Loaded {len(db_child_parent)} mapping rules from database.")
-            return db_parent_child, db_child_parent
-
-    except Exception as e:
-        print(f"❌ Failed to load mappings from DB: {e}. Using static dictionary.")
-        return None, None
-
-# 1. Try to load from DB
-DB_PARENT_CHILD_MAPPING, DB_CHILD_TO_PARENT_MAP = load_mapping_rules_from_db()
-
-# 2. Rename the static dictionary to DEFAULT for clarity/fallback
-DEFAULT_PARENT_CHILD_MAPPING = PARENT_CHILD_MAPPING
-
 def _create_child_to_parent_map(mapping):
-    """Creates a reverse mapping from a cleaned child name to its parent name."""
     child_map = {}
     for parent, children in mapping.items():
         for child in children:
             cleaned_child = re.sub(r'\s+', ' ', child).strip().lower()
             child_map[cleaned_child] = parent
-            
     return child_map
 
-# 3. Determine Final Mappings
-if DB_PARENT_CHILD_MAPPING and DB_CHILD_TO_PARENT_MAP and not os.environ.get('FORCE_STATIC_MAPPING'):
-    # Use DB mappings
-    PARENT_CHILD_MAPPING = DB_PARENT_CHILD_MAPPING
-    CHILD_TO_PARENT_MAP = DB_CHILD_TO_PARENT_MAP
-else:
-    # Fallback to Static
-    CHILD_TO_PARENT_MAP = _create_child_to_parent_map(DEFAULT_PARENT_CHILD_MAPPING)
-
+CHILD_TO_PARENT_MAP = _create_child_to_parent_map(PARENT_CHILD_MAPPING)
 
 def _generate_stable_uuid(name):
-    """Generates a consistent UUID5 based on a given name."""
     return str(uuid.uuid5(NAMESPACE_UUID, name))
 
-
 def create_parent_child_master_table(all_product_data_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Creates the hub_standard_products table with OPTION 3 structure:
-    - parent_product_id: UUID for the parent
-    - parent_name: canonical parent product name
-    - created_at: earliest timestamp for this parent
-    
-    ONE ROW PER PARENT (minimal, clean structure)
-    Child information is stored in source tables via parent_product_id foreign key.
-    """
     print("\n--- Generating hub_standard_products Table (Option 3) ---")
 
     if all_product_data_df.empty:
@@ -700,12 +503,10 @@ def create_parent_child_master_table(all_product_data_df: pd.DataFrame) -> pd.Da
 
     df = all_product_data_df.copy().dropna(subset=['raw_product_name'])
     
-    # Filter out invalid entries
     initial_count = len(df)
     df = df[df['raw_product_name'].astype(str).str.strip() != '0']
     
-    # Filter out garbage/placeholder data entries
-    garbage_values = ['item name', 'product name', 'test', 'n/a', 'na', 'none', '']
+    garbage_values = ['item name', 'product name', 'test', 'n/a', 'na', 'none', '', 'white onion', 'white onion a', 'white onion b', 'white onion c']
     df = df[~df['raw_product_name'].astype(str).str.strip().str.lower().isin(garbage_values)]
     
     final_count = len(df)
@@ -713,17 +514,17 @@ def create_parent_child_master_table(all_product_data_df: pd.DataFrame) -> pd.Da
         print(f" -> Filtered out {initial_count - final_count} invalid/garbage records.")
 
     print("Step 1: Mapping products to parents using PARENT_CHILD_MAPPING...")
-    df['cleaned_name'] = df['raw_product_name'].apply(lambda x: re.sub(r'\s+', ' ', str(x)).strip().lower())
+    df['cleaned_name'] = df['raw_product_name'].apply(
+        lambda x: re.sub(r'\s+', ' ', str(x)).replace(''', "'").replace(''', "'").replace('`', "'").strip().lower()
+    )
     df['parent_name'] = df['cleaned_name'].map(CHILD_TO_PARENT_MAP)
     
-    # For unmapped products, use the original name as parent
     df['parent_name'] = df['parent_name'].fillna(df['raw_product_name'])
 
     print("Step 2: Converting created_at to consistent format...")
     df['created_at'] = pd.to_datetime(df['created_at'], errors='coerce', utc=True)
     
     print("Step 3: Aggregating by parent to get earliest created_at and source...")
-    # Group by parent and get the earliest created_at and first source
     parent_groups = df.groupby('parent_name').agg({
         'created_at': lambda x: x.dropna().min() if not x.dropna().empty else None,
         'source_db': lambda x: x.iloc[0] if len(x) > 0 else None
@@ -733,7 +534,6 @@ def create_parent_child_master_table(all_product_data_df: pd.DataFrame) -> pd.Da
     parent_groups['parent_product_id'] = parent_groups['parent_name'].apply(_generate_stable_uuid)
     
     print("Step 5: Finalizing canonical master table...")
-    # Select final columns in the correct order
     canonical_df = parent_groups[[
         'parent_product_id',
         'parent_name',
@@ -741,21 +541,13 @@ def create_parent_child_master_table(all_product_data_df: pd.DataFrame) -> pd.Da
         'created_at'
     ]].copy()
     
-    # Rename source_db to source
     canonical_df = canonical_df.rename(columns={'source_db': 'source'})
-    
-    # Sort by parent_name
     canonical_df = canonical_df.sort_values('parent_name').reset_index(drop=True)
     
     print(f" -> Created hub_standard_products with {len(canonical_df)} parent products.")
     print(f" -> Child products are linked via parent_product_id in source tables.")
     return canonical_df
 
-# ==============================================================================
-#  2. SUPABASE FETCH & EXECUTION LOGIC
-# ==============================================================================
-
-# Add parent directory to path to reach utils
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 def main():
@@ -763,39 +555,28 @@ def main():
         supabase_engine = get_db_engine('supabase')
         hub_engine = get_db_engine('hub')
         
-        print("\n🚀 CONNECTING TO REMOTE SOURCES...")
+        print("\nCONNECTING TO REMOTE SOURCES...")
 
-        # 1. Fetch Supabase Data (Remote - ONLY products)
-        print("🌐 Fetching from Remote Supabase (products)...")
+        print("Fetching from Remote Supabase (products)...")
         with supabase_engine.connect() as conn:
             df_sup_p = pd.read_sql("SELECT id as raw_product_id, name as raw_product_name, created_at FROM products", conn)
-        print(f"✅ Supabase: Fetched {len(df_sup_p)} products.")
+        print(f"Supabase: Fetched {len(df_sup_p)} products.")
 
-        # 2. Fetch Staging Data (Replaces ClickHouse/Superset)
         from pipeline.data_loader import load_product_data_from_staging
         
-        # We pass hub_engine just to satisfy signature if needed, or create a staging engine
-        # But load_product_data_from_staging requires an engine.
-        # We need to create a staging engine here.
         staging_engine = get_db_engine('staging')
         df_staging = load_product_data_from_staging(staging_engine)
         
-        # 3. Combine ALL Data
-        # df_staging already contains products and product_names
         all_product_data = pd.concat([df_sup_p, df_staging], ignore_index=True)
         
-        # 4. Generate the Canonical Master Table
         master_df = create_parent_child_master_table(all_product_data)
 
         if master_df.empty:
-            print("❌ Standardization failed. No data to save.")
+            print("Standardization failed. No data to save.")
             return
 
-        # 5. Create a Lookup for Parent IDs (raw_name -> parent_id)
-        # We use a case-insensitive, whitespace-trimmed approach for safety
-        print("\n📝 Creating mapping lookup...")
+        print("\nCreating mapping lookup...")
         
-        # Helper to get parent_id for many names
         def get_parent_id(name):
             if not name: return None
             cleaned = re.sub(r'\s+', ' ', str(name)).strip().lower()
