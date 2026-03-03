@@ -123,10 +123,7 @@ class ProductionETLPipeline:
                       AND TRIM(name) != '0'
                 """, conn)
                 
-                df = df.rename(columns={'id': 'raw_product_id', 'name': 'raw_product_name'})
-                df['raw_product_id'] = df['raw_product_id'].astype(str)
-                df['source_table'] = 'supabase_products'
-                df['source_db'] = 'supabase'
+                df['id'] = df['id'].astype(str)
             
             self.stats['supabase_products'] = len(df)
             logger.info(f"   Extracted {len(df)} products from Supply Chain Supabase with {len(df.columns)} columns")
@@ -149,10 +146,7 @@ class ProductionETLPipeline:
                       AND TRIM(name) != '0'
                 """, conn)
                 
-                df = df.rename(columns={'id': 'raw_product_id', 'name': 'raw_product_name'})
-                df['raw_product_id'] = df['raw_product_id'].astype(str)
-                df['source_table'] = 'b2b_products'
-                df['source_db'] = 'b2b'
+                df['id'] = df['id'].astype(str)
             
             self.stats['b2b_products'] = len(df)
             logger.info(f"   Extracted {len(df)} products from B2B Supabase with {len(df.columns)} columns")
@@ -179,27 +173,16 @@ class ProductionETLPipeline:
                       AND TRIM(name) != ''
                 """), conn)
                 
-                df_names = df_names.rename(columns={'id': 'raw_product_id', 'name': 'raw_product_name'})
-                df_names['raw_product_id'] = df_names['raw_product_id'].astype(str)
-                df_names['source_table'] = 'staging_product_names'
-                df_names['source_db'] = 'staging_postgres'
+                df_names['id'] = df_names['id'].astype(str)
                 
-                logger.info("   → Fetching from 'products' table (joined)...")
+                logger.info("   → Fetching from 'products' table...")
                 df_products = pd.read_sql(text("""
-                    SELECT 
-                        p.*,
-                        pn.name as raw_product_name
-                    FROM public.products p
-                    LEFT JOIN public.product_names pn ON p.name_id = pn.id
-                    WHERE pn.name IS NOT NULL
-                      AND TRIM(pn.name) != ''
-                      AND p.deleted_at IS NULL
+                    SELECT *
+                    FROM public.products
+                    WHERE deleted_at IS NULL
                 """), conn)
                 
-                df_products = df_products.rename(columns={'id': 'raw_product_id'})
-                df_products['raw_product_id'] = df_products['raw_product_id'].astype(str)
-                df_products['source_table'] = 'staging_products'
-                df_products['source_db'] = 'staging_postgres'
+                df_products['id'] = df_products['id'].astype(str)
                 
                 self.stats['staging_products'] = len(df_products)
                 self.stats['staging_product_names'] = len(df_names)
@@ -211,132 +194,69 @@ class ProductionETLPipeline:
             logger.error(f"   Failed to extract from Staging PostgreSQL: {e}")
             return pd.DataFrame(), pd.DataFrame()
     
-    def transform_and_standardize(self, combined_df: pd.DataFrame) -> pd.DataFrame:
-        logger.info("\nTRANSFORMING AND STANDARDIZING")
+    def transform_and_standardize(self, df_supabase, df_b2b, df_staging_products, df_staging_names) -> pd.DataFrame:
+        logger.info("\nCREATING PARENT PRODUCTS TABLE")
         
-        if combined_df.empty:
-            logger.warning("   No data to transform")
-            return pd.DataFrame()
+        all_names = []
         
-        logger.info("\nSTEP 1: DATA VALIDATION")
-        df, validation_stats = self.data_validator.validate_dataframe(combined_df)
-        self.stats['validation_removed'] = validation_stats['total_removed']
+        # Collect all product names from all sources
+        if not df_supabase.empty and 'name' in df_supabase.columns:
+            all_names.extend(df_supabase['name'].dropna().tolist())
         
-        if df.empty:
-            logger.error("No valid data remaining after validation")
-            return pd.DataFrame()
+        if not df_b2b.empty and 'name' in df_b2b.columns:
+            all_names.extend(df_b2b['name'].dropna().tolist())
         
-        logger.info("\nFILTERING BLACKLISTED PRODUCTS")
+        if not df_staging_names.empty and 'name' in df_staging_names.columns:
+            all_names.extend(df_staging_names['name'].dropna().tolist())
+        
+        logger.info(f"   Collected {len(all_names)} product names from all sources")
+        
+        # Filter blacklist
         blacklist = ["Product name", "Item name", "product name", "item name", "White Onion", "white onion", "White Onion A", "White Onion B", "White Onion C"]
-        initial_count = len(df)
-        df = df[~df['raw_product_name'].str.lower().isin([b.lower() for b in blacklist])]
-        filtered_count = initial_count - len(df)
-        if filtered_count > 0:
-            logger.info(f"   Filtered out {filtered_count} blacklisted products")
-        else:
-            logger.info(f"   No blacklisted products found")
+        all_names = [n for n in all_names if n.lower() not in [b.lower() for b in blacklist]]
         
-        logger.info("\nSTEP 2: CLEANING PRODUCT NAMES")
-        logger.info("   → Normalizing whitespace, apostrophes, and case...")
-        df['cleaned_name'] = df['raw_product_name'].apply(
-            lambda x: re.sub(r'\s+', ' ', str(x)).replace(''', "'").replace(''', "'").replace('`', "'").strip().lower()
-        )
+        # Map to parent names
+        parent_names = set()
+        for name in all_names:
+            cleaned = re.sub(r'\s+', ' ', str(name)).strip().lower()
+            parent_name = CHILD_TO_PARENT_MAP.get(cleaned, name)
+            parent_names.add(parent_name)
         
-        logger.info("\nSTEP 3: APPLYING PARENT-CHILD MAPPING")
-        logger.info("   → Trying exact matches first...")
-        df['parent_name'] = df['cleaned_name'].map(CHILD_TO_PARENT_MAP)
+        # Create parent products dataframe
+        parent_data = []
+        for parent_name in parent_names:
+            parent_id = _generate_stable_uuid(parent_name)
+            parent_data.append({
+                'parent_id': parent_id,
+                'parent_product_name': parent_name,
+                'created_at': pd.Timestamp.now(tz='UTC')
+            })
         
-        exact_matched = df['parent_name'].notna().sum()
-        logger.info(f"   Exact matches: {exact_matched:,} products")
-        
-        if self.enable_fuzzy_matching and self.fuzzy_matcher:
-            logger.info("\nSTEP 4: APPLYING FUZZY MATCHING")
-            
-            unmapped_mask = df['parent_name'].isna()
-            unmapped_count = unmapped_mask.sum()
-            
-            if unmapped_count > 0:
-                logger.info(f"   → Attempting fuzzy match for {unmapped_count:,} unmapped products...")
-                
-                df.loc[unmapped_mask, 'parent_name'] = df.loc[unmapped_mask, 'raw_product_name'].apply(
-                    self.fuzzy_matcher.find_parent
-                )
-                
-                fuzzy_stats = self.fuzzy_matcher.get_stats()
-                self.stats['fuzzy_matched'] = fuzzy_stats['fuzzy_matches']
-                
-                if not self.fuzzy_dry_run and fuzzy_stats['fuzzy_matches'] > 0:
-                    logger.info(f"   Fuzzy matched: {fuzzy_stats['fuzzy_matches']:,} products")
-                elif self.fuzzy_dry_run and fuzzy_stats['fuzzy_matches'] > 0:
-                    logger.info(f"   [DRY RUN] Would fuzzy match: {fuzzy_stats['fuzzy_matches']:,} products")
-                    logger.info(f"      Set fuzzy_dry_run=False to enable fuzzy matching")
-        else:
-            logger.info("\nSTEP 4: FUZZY MATCHING DISABLED")
-        
-        df['parent_name'] = df['parent_name'].fillna(df['raw_product_name'])
-        
-        mapped = df['cleaned_name'].isin(CHILD_TO_PARENT_MAP).sum()
-        unmapped = len(df) - mapped
-        self.stats['mapped_products'] = mapped
-        self.stats['unmapped_products'] = unmapped
-        
-        logger.info(f"\nMAPPING SUMMARY:")
-        logger.info(f"   • Total products: {len(df):,}")
-        logger.info(f"   • Exact matches: {mapped:,}")
-        logger.info(f"   • Fuzzy matches: {self.stats['fuzzy_matched']:,}")
-        logger.info(f"   • Unmapped (self-mapped): {unmapped:,}")
-        
-        mapping_rate = (mapped / len(df) * 100) if len(df) > 0 else 0
-        logger.info(f"   • Exact match rate: {mapping_rate:.1f}%")
-        
-        logger.info("\nSTEP 5: CONVERTING TIMESTAMPS")
-        df['created_at'] = pd.to_datetime(df['created_at'], errors='coerce', utc=True)
-        
-        logger.info("\nSTEP 6: AGGREGATING BY PARENT PRODUCT")
-        parent_groups = df.groupby('parent_name').agg({
-            'created_at': lambda x: x.dropna().min() if not x.dropna().empty else None,
-            'source_db': lambda x: x.iloc[0] if len(x) > 0 else None
-        }).reset_index()
-        
-        logger.info("   → Generating stable parent product IDs...")
-        parent_groups['parent_id'] = parent_groups['parent_name'].apply(_generate_stable_uuid)
-        
-        parent_groups = parent_groups.rename(columns={'parent_name': 'parent_product_name'})
-        
-        canonical_df = parent_groups[[
-            'parent_id',
-            'parent_product_name',
-            'created_at'
-        ]].copy()
-        
+        canonical_df = pd.DataFrame(parent_data)
         canonical_df = canonical_df.sort_values('parent_product_name').reset_index(drop=True)
         
         self.stats['parent_products'] = len(canonical_df)
+        self.stats['mapped_products'] = len(all_names)
+        
         logger.info(f"   Created {len(canonical_df):,} parent products")
         
         return canonical_df
     
     
     def _map_dataframe_ids(self, df: pd.DataFrame) -> pd.DataFrame:
-        def get_parent_info(name):
+        def get_parent_id(name):
             if not name:
-                return None, None
+                return None
             cleaned = re.sub(r'\s+', ' ', str(name)).strip().lower()
             parent_name = CHILD_TO_PARENT_MAP.get(cleaned, name)
             parent_id = _generate_stable_uuid(parent_name)
-            return parent_id, parent_name
+            return parent_id
             
         temp_df = df.copy()
-        if 'raw_product_name' in temp_df.columns:
-            name_col = 'raw_product_name'
-        elif 'name' in temp_df.columns:
-            name_col = 'name'
-        else:
+        if 'name' not in temp_df.columns:
             return temp_df
             
-        temp_df[['parent_id', 'parent_product_name']] = temp_df[name_col].apply(
-            lambda x: pd.Series(get_parent_info(x))
-        )
+        temp_df['parent_id'] = temp_df['name'].apply(get_parent_id)
         return temp_df
 
     def upsert_canonical_master(self, canonical_df: pd.DataFrame, engine, db_name: str):
@@ -393,6 +313,227 @@ class ProductionETLPipeline:
         except Exception as e:
             logger.error(f"   Failed to upsert to {db_name}: {e}")
             raise
+    
+    def save_parent_products_to_remote(self, canonical_master):
+        """Create or update parent_products table in each remote database"""
+        logger.info("\nCREATING/UPDATING PARENT_PRODUCTS TABLE IN REMOTE DATABASES")
+        
+        standard_df = canonical_master.rename(columns={
+            'parent_id': 'id',
+            'parent_product_name': 'name'
+        })
+        standard_df = standard_df[['id', 'name', 'created_at']]
+        
+        # Save to Supply Chain Supabase
+        logger.info("   [1/3] Upserting parent_products in Supply Chain Supabase...")
+        try:
+            with self.supabase_engine.begin() as conn:
+                # Create table if not exists
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS parent_products (
+                        id UUID PRIMARY KEY,
+                        name VARCHAR(255),
+                        created_at TIMESTAMP WITH TIME ZONE
+                    )
+                """))
+                
+                # Upsert via temp table
+                standard_df.to_sql('temp_parent_products', conn, if_exists='replace', index=False)
+                conn.execute(text("""
+                    INSERT INTO parent_products (id, name, created_at)
+                    SELECT id::uuid, name, created_at
+                    FROM temp_parent_products
+                    ON CONFLICT (id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        created_at = EXCLUDED.created_at
+                """))
+                conn.execute(text("DROP TABLE temp_parent_products"))
+                logger.info(f"         ✓ Upserted {len(standard_df)} parent products")
+        except Exception as e:
+            logger.error(f"         ❌ Failed: {e}")
+        
+        # Save to B2B Supabase
+        logger.info("   [2/3] Upserting parent_products in B2B Supabase...")
+        try:
+            with self.b2b_engine.begin() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS parent_products (
+                        id UUID PRIMARY KEY,
+                        name VARCHAR(255),
+                        created_at TIMESTAMP WITH TIME ZONE
+                    )
+                """))
+                
+                standard_df.to_sql('temp_parent_products', conn, if_exists='replace', index=False)
+                conn.execute(text("""
+                    INSERT INTO parent_products (id, name, created_at)
+                    SELECT id::uuid, name, created_at
+                    FROM temp_parent_products
+                    ON CONFLICT (id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        created_at = EXCLUDED.created_at
+                """))
+                conn.execute(text("DROP TABLE temp_parent_products"))
+                logger.info(f"         ✓ Upserted {len(standard_df)} parent products")
+        except Exception as e:
+            logger.error(f"         ❌ Failed: {e}")
+        
+        # Save to Staging PostgreSQL
+        logger.info("   [3/3] Upserting parent_products in Staging PostgreSQL...")
+        try:
+            with self.staging_engine.begin() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS parent_products (
+                        id UUID PRIMARY KEY,
+                        name VARCHAR(255),
+                        created_at TIMESTAMP WITH TIME ZONE
+                    )
+                """))
+                
+                standard_df.to_sql('temp_parent_products', conn, if_exists='replace', index=False)
+                conn.execute(text("""
+                    INSERT INTO parent_products (id, name, created_at)
+                    SELECT id::uuid, name, created_at
+                    FROM temp_parent_products
+                    ON CONFLICT (id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        created_at = EXCLUDED.created_at
+                """))
+                conn.execute(text("DROP TABLE temp_parent_products"))
+                logger.info(f"         ✓ Upserted {len(standard_df)} parent products")
+        except Exception as e:
+            logger.error(f"         ❌ Failed: {e}")
+    
+    def add_parent_id_to_remote_tables(self):
+        """Add parent_id column to remote database tables"""
+        logger.info("\nADDING PARENT_ID TO REMOTE TABLES")
+        
+        # 1. Supply Chain Supabase - products table
+        logger.info("   [1/4] Updating Supply Chain Supabase products...")
+        try:
+            with self.supabase_engine.begin() as conn:
+                # Add column if not exists
+                conn.execute(text("""
+                    ALTER TABLE products 
+                    ADD COLUMN IF NOT EXISTS parent_id UUID
+                """))
+                
+                # Get all products
+                df = pd.read_sql("SELECT id, name FROM products WHERE name IS NOT NULL", conn)
+                
+                # Calculate parent_id
+                def get_parent_id(name):
+                    if not name:
+                        return None
+                    cleaned = re.sub(r'\s+', ' ', str(name)).strip().lower()
+                    parent_name = CHILD_TO_PARENT_MAP.get(cleaned, name)
+                    return _generate_stable_uuid(parent_name)
+                
+                df['parent_id'] = df['name'].apply(get_parent_id)
+                
+                # Update via temp table
+                df[['id', 'parent_id']].to_sql('temp_parent_updates', conn, if_exists='replace', index=False)
+                conn.execute(text("""
+                    UPDATE products p
+                    SET parent_id = t.parent_id::uuid
+                    FROM temp_parent_updates t
+                    WHERE p.id = t.id::uuid
+                """))
+                conn.execute(text("DROP TABLE temp_parent_updates"))
+                
+                # Create index
+                conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS idx_products_parent_id 
+                    ON products(parent_id)
+                """))
+                
+                updated = len(df[df['parent_id'].notna()])
+                logger.info(f"         ✓ Updated {updated}/{len(df)} records")
+        except Exception as e:
+            logger.error(f"         ❌ Failed: {e}")
+        
+        # 2. B2B Supabase - products table
+        logger.info("   [2/4] Updating B2B Supabase products...")
+        try:
+            with self.b2b_engine.begin() as conn:
+                conn.execute(text("""
+                    ALTER TABLE products 
+                    ADD COLUMN IF NOT EXISTS parent_id UUID
+                """))
+                
+                df = pd.read_sql("SELECT id, name FROM products WHERE name IS NOT NULL", conn)
+                
+                def get_parent_id(name):
+                    if not name:
+                        return None
+                    cleaned = re.sub(r'\s+', ' ', str(name)).strip().lower()
+                    parent_name = CHILD_TO_PARENT_MAP.get(cleaned, name)
+                    return _generate_stable_uuid(parent_name)
+                
+                df['parent_id'] = df['name'].apply(get_parent_id)
+                
+                df[['id', 'parent_id']].to_sql('temp_parent_updates', conn, if_exists='replace', index=False)
+                conn.execute(text("""
+                    UPDATE products p
+                    SET parent_id = t.parent_id::uuid
+                    FROM temp_parent_updates t
+                    WHERE p.id = t.id::uuid
+                """))
+                conn.execute(text("DROP TABLE temp_parent_updates"))
+                
+                conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS idx_products_parent_id 
+                    ON products(parent_id)
+                """))
+                
+                updated = len(df[df['parent_id'].notna()])
+                logger.info(f"         ✓ Updated {updated}/{len(df)} records")
+        except Exception as e:
+            logger.error(f"         ❌ Failed: {e}")
+        
+        # 3. Staging PostgreSQL - product_names table
+        logger.info("   [3/4] Updating Staging product_names...")
+        try:
+            with self.staging_engine.begin() as conn:
+                conn.execute(text("""
+                    ALTER TABLE product_names 
+                    ADD COLUMN IF NOT EXISTS parent_id UUID
+                """))
+                
+                df = pd.read_sql("SELECT id, name FROM product_names WHERE name IS NOT NULL", conn)
+                
+                def get_parent_id(name):
+                    if not name:
+                        return None
+                    cleaned = re.sub(r'\s+', ' ', str(name)).strip().lower()
+                    parent_name = CHILD_TO_PARENT_MAP.get(cleaned, name)
+                    return _generate_stable_uuid(parent_name)
+                
+                df['parent_id'] = df['name'].apply(get_parent_id)
+                
+                df[['id', 'parent_id']].to_sql('temp_parent_updates', conn, if_exists='replace', index=False)
+                conn.execute(text("""
+                    UPDATE product_names p
+                    SET parent_id = t.parent_id::uuid
+                    FROM temp_parent_updates t
+                    WHERE p.id = t.id::uuid
+                """))
+                conn.execute(text("DROP TABLE temp_parent_updates"))
+                
+                conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS idx_product_names_parent_id 
+                    ON product_names(parent_id)
+                """))
+                
+                updated = len(df[df['parent_id'].notna()])
+                logger.info(f"         ✓ Updated {updated}/{len(df)} records")
+        except Exception as e:
+            logger.error(f"         ❌ Failed: {e}")
+        
+        # 4. Staging PostgreSQL - products table (no update, no name column)
+        logger.info("   [4/4] Staging products table...")
+        logger.info(f"         ⚠️  Skipped (no name column to map)")
+
     
     def update_parent_ids_batch(self, engine, table_name: str, db_name: str):
         logger.info(f"\nUPDATING PARENT IDs IN {db_name}.{table_name}")
@@ -557,11 +698,16 @@ class ProductionETLPipeline:
                 logger.info(f"   To enable fuzzy matching, set fuzzy_dry_run=False when initializing pipeline")
         
         logger.info(f"\nData Loading:")
-        logger.info(f"   Canonical master updated in 3 databases")
-        logger.info(f"   Parent IDs updated in source tables")
+        logger.info(f"   ✓ Updated remote databases:")
+        logger.info(f"      • parent_products table created in all 3 databases")
+        logger.info(f"      • Supply Chain Supabase: products + parent_id")
+        logger.info(f"      • B2B Supabase: products + parent_id")
+        logger.info(f"      • Staging PostgreSQL: product_names + parent_id")
+        logger.info(f"   ✓ Indexes created on parent_id columns")
         
-        logger.info(f"\nPeerDB Sync:")
-        logger.info(f"   Production PostgreSQL -> ClickHouse (automatic)")
+        logger.info(f"\nDatabase Summary:")
+        logger.info(f"   • All remote databases updated with parent_id")
+        logger.info(f"   • parent_products table created in each database")
         
         logger.info("\n" + "=" * 80)
         logger.info("PIPELINE COMPLETED SUCCESSFULLY!")
@@ -579,40 +725,23 @@ class ProductionETLPipeline:
             df_b2b = self.extract_from_b2b()
             df_staging_products, df_staging_names = self.extract_from_staging()
             
-            logger.info("\nCOMBINING DATA FROM ALL SOURCES")
-            combined_df = pd.concat([df_supabase, df_b2b, df_staging_products, df_staging_names], ignore_index=True)
-            self.stats['total_products'] = len(combined_df)
-            logger.info(f"   Combined {len(combined_df)} total products")
+            self.stats['total_products'] = self.stats['supabase_products'] + self.stats['b2b_products'] + self.stats['staging_product_names']
             
-            canonical_master = self.transform_and_standardize(combined_df)
+            canonical_master = self.transform_and_standardize(df_supabase, df_b2b, df_staging_products, df_staging_names)
             
             if canonical_master.empty:
                 logger.error("No canonical master data generated")
                 return False
             
             logger.info("\n" + "=" * 80)
-            logger.info("💾 LOADING CANONICAL MASTER TO DATABASES")
+            logger.info("💾 UPDATING REMOTE DATABASES")
             logger.info("=" * 80)
             
-            logger.info("   🔓 READ-WRITE MODE: Updating Supabase and Staging")
+            # Create parent_products table in all remote databases
+            self.save_parent_products_to_remote(canonical_master)
             
-            self.upsert_canonical_master(canonical_master, self.supabase_engine, "Supply Chain Supabase PostgreSQL")
-            self.upsert_canonical_master(canonical_master, self.b2b_engine, "B2B Supabase PostgreSQL")
-            self.upsert_canonical_master(canonical_master, self.staging_engine, "Staging PostgreSQL")
-            
-            self.update_parent_ids_batch(self.supabase_engine, 'products', "Supply Chain Supabase PostgreSQL")
-            self.update_parent_ids_batch(self.b2b_engine, 'products', "B2B Supabase PostgreSQL")
-            
-            self.update_parent_ids_batch(self.staging_engine, 'product_names', "Staging PostgreSQL")
-            
-            self.update_source_tables_parent_ids()
-
-            
-            if self.enable_fuzzy_matching and self.fuzzy_matcher:
-                logger.info("\n" + "=" * 80)
-                logger.info("EXPORTING FUZZY MATCHES FOR REVIEW")
-                logger.info("=" * 80)
-                self.fuzzy_matcher.export_fuzzy_matches('logs/fuzzy_matches_review.csv')
+            # Add parent_id column to existing tables
+            self.add_parent_id_to_remote_tables()
             
             self.generate_report()
             

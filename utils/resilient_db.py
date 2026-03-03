@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import logging
+from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from sqlalchemy import create_engine, text
@@ -48,8 +49,8 @@ class ResilientDBConnector:
             if not all([host, port, db_name, user, password]):
                 raise ValueError(f"Missing environment variables for {log_name}")
             
-            # Create connection string
-            conn_str = f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
+            encoded_password = quote_plus(password)
+            conn_str = f"postgresql://{user}:{encoded_password}@{host}:{port}/{db_name}"
             
             # Create engine with connection pooling
             engine = create_engine(
